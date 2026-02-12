@@ -1,0 +1,14 @@
+/node_modules
+/dist
+/build
+/coverage
+/logs
+/temp
+/uploads
+/public
+/config
+/scripts
+/test
+/docs
+/examples
+/src/config/db.js
