@@ -2,6 +2,14 @@ import { Ospe } from '../models/Ospe.js';
 import { OspeAttempt } from '../models/OspeAttempt.js';
 import { canAccessModule } from '../utils/access.js';
 
+/** Flatten stations or legacy questions into a single list for answer indexing */
+function getFlatQuestions(ospe) {
+  if (ospe.stations && ospe.stations.length > 0) {
+    return ospe.stations.flatMap((s) => s.questions || []);
+  }
+  return ospe.questions || [];
+}
+
 export const listByModule = async (req, res, next) => {
   try {
     if (!req.user) return res.status(401).json({ message: 'Authentication required' });
@@ -23,7 +31,15 @@ export const getOne = async (req, res, next) => {
     if (!req.user) return res.status(401).json({ message: 'Authentication required' });
     const access = await canAccessModule(req.user._id, ospe.module._id);
     if (!access.allowed) return res.status(403).json({ message: 'Access denied' });
-    res.json(ospe);
+    const doc = ospe.toObject ? ospe.toObject() : ospe;
+    if (!doc.stations?.length && doc.questions?.length) {
+      doc.stations = doc.questions.map((q, i) => ({
+        imageUrl: q.imageUrl,
+        questions: [{ ...q, imageUrl: undefined }],
+        order: i,
+      }));
+    }
+    res.json(doc);
   } catch (err) {
     next(err);
   }
@@ -36,12 +52,14 @@ export const submitAttempt = async (req, res, next) => {
     if (!ospe) return res.status(404).json({ message: 'OSPE not found' });
     const access = await canAccessModule(req.user._id, ospe.module.toString());
     if (!access.allowed) return res.status(403).json({ message: 'Access denied' });
+    const flatQuestions = getFlatQuestions(ospe);
     const answerList = (answers || []).map((a, i) => {
       const qIndex = a.questionIndex ?? i;
-      const q = ospe.questions[qIndex];
+      const q = flatQuestions[qIndex];
       let correct = false;
       if (q) {
-        if (q.type === 'picture_mcq' && q.correctIndex != null) {
+        const mcqTypes = ['picture_mcq', 'text_mcq', 'guess_until_correct'];
+        if (mcqTypes.includes(q.type) && q.correctIndex != null) {
           correct = q.correctIndex === Number(a.selectedIndex);
         } else if (q.type === 'viva_written' && q.expectedAnswer) {
           correct = String((a.writtenAnswer || '').trim()).toLowerCase() === String(q.expectedAnswer).toLowerCase();

@@ -1,12 +1,11 @@
 import mongoose from 'mongoose';
 
-const yearSchema = new mongoose.Schema(
+const programSchema = new mongoose.Schema(
   {
-    program: { type: mongoose.Schema.Types.ObjectId, ref: 'Program' },
     name: { type: String, required: true, trim: true },
     order: { type: Number, required: true, default: 1 },
   },
   { timestamps: true }
 );
 
-export const Year = mongoose.model('Year', yearSchema);
+export const Program = mongoose.model('Program', programSchema);
