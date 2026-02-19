@@ -6,6 +6,8 @@ import { Topic } from '../models/Topic.js';
 import { Mcq } from '../models/Mcq.js';
 import { Ospe } from '../models/Ospe.js';
 import { ProffStructure } from '../models/ProffStructure.js';
+import { ProffMcq } from '../models/ProffMcq.js';
+import { ProffOspe } from '../models/ProffOspe.js';
 import { Package } from '../models/Package.js';
 import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
@@ -491,6 +493,334 @@ export const deleteProffOtherYear = async (req, res, next) => {
     doc.years.pull(req.params.yearId);
     await doc.save();
     res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+
+// --- Proff content (MCQs, OSPE) ---
+async function getJsmuYearAndPaper(yearId, paperId) {
+  const doc = await ProffStructure.findOne({ university: 'jsmu' });
+  if (!doc) return { doc: null, year: null, paper: null };
+  const year = doc.years.id(yearId);
+  if (!year) return { doc, year: null, paper: null };
+  const paper = year.papers?.id?.(paperId) ?? null;
+  return { doc, year, paper };
+}
+async function getOtherYearAndSubject(yearId, subjectId) {
+  const doc = await ProffStructure.findOne({ university: 'other' });
+  if (!doc) return { doc: null, year: null, subject: null };
+  const year = doc.years.id(yearId);
+  if (!year) return { doc, year: null, subject: null };
+  const subject = year.subjects?.id?.(subjectId) ?? null;
+  return { doc, year, subject };
+}
+
+// JSMU paper MCQs
+export const listProffJsmuPaperMcqs = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
+    const mcqs = await ProffMcq.find({
+      university: 'jsmu',
+      proffYear: req.params.yearId,
+      proffPaper: req.params.paperId,
+    }).sort({ order: 1 });
+    res.json(mcqs);
+  } catch (err) {
+    next(err);
+  }
+};
+export const getProffJsmuPaperMcq = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    const mcq = await ProffMcq.findOne({
+      _id: req.params.mcqId,
+      university: 'jsmu',
+      proffYear: req.params.yearId,
+      proffPaper: req.params.paperId,
+    });
+    if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
+    res.json(mcq);
+  } catch (err) {
+    next(err);
+  }
+};
+export const createProffJsmuPaperMcq = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
+    const mcq = await ProffMcq.create({
+      ...req.body,
+      university: 'jsmu',
+      proffYear: req.params.yearId,
+      proffPaper: req.params.paperId,
+    });
+    res.status(201).json(mcq);
+  } catch (err) {
+    next(err);
+  }
+};
+export const updateProffJsmuPaperMcq = async (req, res, next) => {
+  try {
+    const mcq = await ProffMcq.findOneAndUpdate(
+      {
+        _id: req.params.mcqId,
+        university: 'jsmu',
+        proffYear: req.params.yearId,
+        proffPaper: req.params.paperId,
+      },
+      req.body,
+      { new: true }
+    );
+    if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
+    res.json(mcq);
+  } catch (err) {
+    next(err);
+  }
+};
+export const deleteProffJsmuPaperMcq = async (req, res, next) => {
+  try {
+    const mcq = await ProffMcq.findOneAndDelete({
+      _id: req.params.mcqId,
+      university: 'jsmu',
+      proffYear: req.params.yearId,
+      proffPaper: req.params.paperId,
+    });
+    if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+export const parseProffJsmuPaperMcqs = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
+    const rawText = req.body.text || req.body.raw || '';
+    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [] });
+  } catch (err) {
+    next(err);
+  }
+};
+export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
+    const rawText = req.body.text || req.body.raw || '';
+    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    const created = [];
+    for (let i = 0; i < mcqs.length; i++) {
+      const m = mcqs[i];
+      const doc = await ProffMcq.create({
+        university: 'jsmu',
+        proffYear: req.params.yearId,
+        proffPaper: req.params.paperId,
+        question: m.question,
+        options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
+        correctIndex: m.correctIndex ?? 0,
+        explanation: m.explanation || '',
+        videoUrl: m.videoUrl || undefined,
+        type: req.body.type || 'text',
+        order: i,
+      });
+      created.push(doc);
+    }
+    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// JSMU paper OSPE
+export const getProffJsmuPaperOspe = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    if (paper.type !== 'ospe') return res.status(400).json({ message: 'Paper is not an OSPE paper' });
+    const ospe = await ProffOspe.findOne({
+      university: 'jsmu',
+      proffYear: req.params.yearId,
+      proffPaper: req.params.paperId,
+    });
+    if (!ospe) return res.status(404).json({ message: 'OSPE not found' });
+    res.json(ospe);
+  } catch (err) {
+    next(err);
+  }
+};
+export const upsertProffJsmuPaperOspe = async (req, res, next) => {
+  try {
+    const { year, paper } = await getJsmuYearAndPaper(req.params.yearId, req.params.paperId);
+    if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
+    if (paper.type !== 'ospe') return res.status(400).json({ message: 'Paper is not an OSPE paper' });
+    const ospe = await ProffOspe.findOneAndUpdate(
+      {
+        university: 'jsmu',
+        proffYear: req.params.yearId,
+        proffPaper: req.params.paperId,
+      },
+      { ...req.body, university: 'jsmu', proffYear: req.params.yearId, proffPaper: req.params.paperId },
+      { new: true, upsert: true }
+    );
+    res.json(ospe);
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Other subject MCQs
+export const listProffOtherSubjectMcqs = async (req, res, next) => {
+  try {
+    const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
+    if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
+    const mcqs = await ProffMcq.find({
+      university: 'other',
+      proffYear: req.params.yearId,
+      proffSubject: req.params.subjectId,
+    }).sort({ order: 1 });
+    res.json(mcqs);
+  } catch (err) {
+    next(err);
+  }
+};
+export const getProffOtherSubjectMcq = async (req, res, next) => {
+  try {
+    const mcq = await ProffMcq.findOne({
+      _id: req.params.mcqId,
+      university: 'other',
+      proffYear: req.params.yearId,
+      proffSubject: req.params.subjectId,
+    });
+    if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
+    res.json(mcq);
+  } catch (err) {
+    next(err);
+  }
+};
+export const createProffOtherSubjectMcq = async (req, res, next) => {
+  try {
+    const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
+    if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
+    const mcq = await ProffMcq.create({
+      ...req.body,
+      university: 'other',
+      proffYear: req.params.yearId,
+      proffSubject: req.params.subjectId,
+    });
+    res.status(201).json(mcq);
+  } catch (err) {
+    next(err);
+  }
+};
+export const updateProffOtherSubjectMcq = async (req, res, next) => {
+  try {
+    const mcq = await ProffMcq.findOneAndUpdate(
+      {
+        _id: req.params.mcqId,
+        university: 'other',
+        proffYear: req.params.yearId,
+        proffSubject: req.params.subjectId,
+      },
+      req.body,
+      { new: true }
+    );
+    if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
+    res.json(mcq);
+  } catch (err) {
+    next(err);
+  }
+};
+export const deleteProffOtherSubjectMcq = async (req, res, next) => {
+  try {
+    const mcq = await ProffMcq.findOneAndDelete({
+      _id: req.params.mcqId,
+      university: 'other',
+      proffYear: req.params.yearId,
+      proffSubject: req.params.subjectId,
+    });
+    if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+};
+export const parseProffOtherSubjectMcqs = async (req, res, next) => {
+  try {
+    const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
+    if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
+    const rawText = req.body.text || req.body.raw || '';
+    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [] });
+  } catch (err) {
+    next(err);
+  }
+};
+export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
+  try {
+    const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
+    if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
+    const rawText = req.body.text || req.body.raw || '';
+    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    const created = [];
+    for (let i = 0; i < mcqs.length; i++) {
+      const m = mcqs[i];
+      const doc = await ProffMcq.create({
+        university: 'other',
+        proffYear: req.params.yearId,
+        proffSubject: req.params.subjectId,
+        question: m.question,
+        options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
+        correctIndex: m.correctIndex ?? 0,
+        explanation: m.explanation || '',
+        videoUrl: m.videoUrl || undefined,
+        type: req.body.type || 'text',
+        order: i,
+      });
+      created.push(doc);
+    }
+    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Other subject OSPE
+export const getProffOtherSubjectOspe = async (req, res, next) => {
+  try {
+    const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
+    if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
+    const ospe = await ProffOspe.findOne({
+      university: 'other',
+      proffYear: req.params.yearId,
+      proffSubject: req.params.subjectId,
+    });
+    if (!ospe) return res.status(404).json({ message: 'OSPE not found' });
+    res.json(ospe);
+  } catch (err) {
+    next(err);
+  }
+};
+export const upsertProffOtherSubjectOspe = async (req, res, next) => {
+  try {
+    const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
+    if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
+    const ospe = await ProffOspe.findOneAndUpdate(
+      {
+        university: 'other',
+        proffYear: req.params.yearId,
+        proffSubject: req.params.subjectId,
+      },
+      { ...req.body, university: 'other', proffYear: req.params.yearId, proffSubject: req.params.subjectId },
+      { new: true, upsert: true }
+    );
+    res.json(ospe);
   } catch (err) {
     next(err);
   }

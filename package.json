@@ -8,7 +8,8 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "seed:packages": "node scripts/seedYearPackages.js",
-    "seed:resources": "node scripts/seedSubjectsMcqsOspes.js"
+    "seed:resources": "node scripts/seedSubjectsMcqsOspes.js",
+    "seed:ospe": "node scripts/seedOspeSample.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

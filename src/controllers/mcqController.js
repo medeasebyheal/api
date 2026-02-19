@@ -31,9 +31,9 @@ export const submitAttempt = async (req, res, next) => {
     });
     res.json({
       correct,
-      correctIndex: correct ? mcq.correctIndex : undefined,
-      explanation: correct ? mcq.explanation : undefined,
-      videoUrl: correct ? (mcq.videoUrl || null) : undefined,
+      correctIndex: mcq.correctIndex,
+      explanation: mcq.explanation ?? undefined,
+      videoUrl: mcq.videoUrl || null,
     });
   } catch (err) {
     next(err);
