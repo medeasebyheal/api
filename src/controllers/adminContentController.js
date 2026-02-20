@@ -4,11 +4,13 @@ import { Module } from '../models/Module.js';
 import { Subject } from '../models/Subject.js';
 import { Topic } from '../models/Topic.js';
 import { Mcq } from '../models/Mcq.js';
+import { OneShotLecture } from '../models/OneShotLecture.js';
 import { Ospe } from '../models/Ospe.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { ProffMcq } from '../models/ProffMcq.js';
 import { ProffOspe } from '../models/ProffOspe.js';
 import { Package } from '../models/Package.js';
+import { PromoCode } from '../models/PromoCode.js';
 import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
 import { parseBulkMcqs } from '../utils/mcqBulkParser.js';
@@ -222,6 +224,7 @@ export const deleteTopic = async (req, res, next) => {
     if (!topic) return res.status(404).json({ message: 'Topic not found' });
     await Subject.updateOne({ _id: topic.subject }, { $pull: { topicIds: topic._id } });
     await Mcq.deleteMany({ topic: topic._id });
+    await OneShotLecture.deleteMany({ topic: topic._id });
     res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);
@@ -311,6 +314,46 @@ export const bulkCreateMcqs = async (req, res, next) => {
       created.push(doc);
     }
     res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// One Shot Lectures (YouTube lectures per topic)
+export const listOneShotLectures = async (req, res, next) => {
+  try {
+    const lectures = await OneShotLecture.find({ topic: req.params.topicId }).sort({ order: 1 });
+    res.json(lectures);
+  } catch (err) {
+    next(err);
+  }
+};
+export const createOneShotLecture = async (req, res, next) => {
+  try {
+    const lecture = await OneShotLecture.create({ ...req.body, topic: req.params.topicId });
+    res.status(201).json(lecture);
+  } catch (err) {
+    next(err);
+  }
+};
+export const updateOneShotLecture = async (req, res, next) => {
+  try {
+    const lecture = await OneShotLecture.findOneAndUpdate(
+      { _id: req.params.lectureId, topic: req.params.topicId },
+      req.body,
+      { new: true }
+    );
+    if (!lecture) return res.status(404).json({ message: 'One shot lecture not found' });
+    res.json(lecture);
+  } catch (err) {
+    next(err);
+  }
+};
+export const deleteOneShotLecture = async (req, res, next) => {
+  try {
+    const lecture = await OneShotLecture.findOneAndDelete({ _id: req.params.lectureId, topic: req.params.topicId });
+    if (!lecture) return res.status(404).json({ message: 'One shot lecture not found' });
+    res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);
   }
@@ -883,6 +926,46 @@ export const dashboardStats = async (req, res, next) => {
       topicCount,
       mcqCount,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Admin promo codes
+export const listPromoCodes = async (req, res, next) => {
+  try {
+    const codes = await PromoCode.find().sort({ createdAt: -1 });
+    res.json(codes);
+  } catch (err) {
+    next(err);
+  }
+};
+export const createPromoCode = async (req, res, next) => {
+  try {
+    const data = { ...req.body };
+    if (data.code) data.code = data.code.trim().toUpperCase();
+    const promo = await PromoCode.create(data);
+    res.status(201).json(promo);
+  } catch (err) {
+    next(err);
+  }
+};
+export const updatePromoCode = async (req, res, next) => {
+  try {
+    const data = { ...req.body };
+    if (data.code) data.code = data.code.trim().toUpperCase();
+    const promo = await PromoCode.findByIdAndUpdate(req.params.id, data, { new: true });
+    if (!promo) return res.status(404).json({ message: 'Promo code not found' });
+    res.json(promo);
+  } catch (err) {
+    next(err);
+  }
+};
+export const deletePromoCode = async (req, res, next) => {
+  try {
+    const promo = await PromoCode.findByIdAndDelete(req.params.id);
+    if (!promo) return res.status(404).json({ message: 'Promo code not found' });
+    res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);
   }

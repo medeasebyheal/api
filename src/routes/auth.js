@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { auth } from '../middleware/auth.js';
-import { register, login, me, createAdmin } from '../controllers/authController.js';
+import { register, login, me, createAdmin, verifyOtp } from '../controllers/authController.js';
 
 const router = Router();
 
@@ -22,6 +22,18 @@ router.post(
   ],
   validate,
   register
+);
+
+router.post(
+  '/verify-otp',
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+    body('otp').trim().notEmpty().withMessage('OTP is required'),
+    body('name').trim().notEmpty().withMessage('Name is required'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  ],
+  validate,
+  verifyOtp
 );
 
 router.post(

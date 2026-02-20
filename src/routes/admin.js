@@ -58,6 +58,11 @@ router.delete('/topics/:topicId/mcqs/:mcqId', admin.deleteMcq);
 router.post('/topics/:topicId/mcqs/parse', admin.parseBulkMcqsPreview);
 router.post('/topics/:topicId/mcqs/bulk', admin.bulkCreateMcqs);
 
+router.get('/topics/:topicId/one-shot-lectures', admin.listOneShotLectures);
+router.post('/topics/:topicId/one-shot-lectures', admin.createOneShotLecture);
+router.put('/topics/:topicId/one-shot-lectures/:lectureId', admin.updateOneShotLecture);
+router.delete('/topics/:topicId/one-shot-lectures/:lectureId', admin.deleteOneShotLecture);
+
 router.get('/modules/:moduleId/ospes', admin.listOspes);
 router.post('/modules/:moduleId/ospes', admin.createOspe);
 router.put('/ospes/:id', admin.updateOspe);
@@ -96,5 +101,10 @@ router.get('/packages', admin.listPackagesAdmin);
 router.post('/packages', admin.createPackage);
 router.put('/packages/:id', admin.updatePackage);
 router.delete('/packages/:id', admin.deletePackage);
+
+router.get('/promo-codes', admin.listPromoCodes);
+router.post('/promo-codes', admin.createPromoCode);
+router.put('/promo-codes/:id', admin.updatePromoCode);
+router.delete('/promo-codes/:id', admin.deletePromoCode);
 
 export default router;

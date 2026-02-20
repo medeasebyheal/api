@@ -2,74 +2,30 @@
   "yearPackages": [
     {
       "year": 1,
-      "yearName": "First Year",
+      "yearName": "MS 1",
       "halfPackages": [
-        {
-          "part": 1,
-          "partName": "Part 1",
-          "modules": [
-            "Foundation Module",
-            "Locomotor Module"
-          ]
-        },
-        {
-          "part": 2,
-          "partName": "Part 2",
-          "modules": [
-            "Blood Module",
-            "Respiratory Module",
-            "Cardiovascular Module"
-          ]
-        }
+        { "part": 1, "partName": "Part 1", "modules": ["Foundation Module", "Locomotor Module"] },
+        { "part": 2, "partName": "Part 2", "modules": ["Blood", "Respiratory Module", "Cardiovascular Module"] }
       ]
     },
     {
       "year": 2,
-      "yearName": "Second Year",
+      "yearName": "MS 2",
       "halfPackages": [
-        {
-          "part": 1,
-          "partName": "Part 1",
-          "modules": [
-            "Neuro Module",
-            "Gastrointestinal Module",
-            "Reproductive Module"
-          ]
-        },
-        {
-          "part": 2,
-          "partName": "Part 2",
-          "modules": [
-            "Head & Neck Module",
-            "Endocrine Module",
-            "Renal Module"
-          ]
-        }
+        { "part": 1, "partName": "Part 1", "modules": ["Neuro Module", "Gastrointestinal Module", "Reproductive Module"] },
+        { "part": 2, "partName": "Part 2", "modules": ["Head & Neck Module", "Endocrine Module", "Renal Module"] }
       ]
     },
     {
       "year": 3,
-      "yearName": "Third Year",
+      "yearName": "MS 3",
       "halfPackages": [
-        {
-          "part": 1,
-          "partName": "Part 1",
-          "modules": [
-            "Foundation Module",
-            "Blood Module",
-            "Locomotor Module"
-          ]
-        },
-        {
-          "part": 2,
-          "partName": "Part 2",
-          "modules": [
-            "Cardiovascular Module",
-            "Respiratory Module",
-            "Gastrointestinal Module"
-          ]
-        }
+        { "part": 1, "partName": "Part 1", "modules": ["Foundation Module", "Blood Module", "Locomotor Module"] },
+        { "part": 2, "partName": "Part 2", "modules": ["Cardiovascular Module", "Respiratory Module", "Gastrointestinal Module"] }
       ]
     }
-  ]
+  ],
+  "masterProff": {
+    "papers": ["Paper 1", "Paper 2", "Paper 3", "Paper 4"]
+  }
 }

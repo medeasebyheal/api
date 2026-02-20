@@ -71,6 +71,15 @@ export async function sendPaymentRejected(email, name, reason) {
   });
 }
 
+export async function sendOtpVerification(email, otp, name) {
+  return sendEmail({
+    to: email,
+    subject: 'MEDEASE – Verify your email',
+    text: `Hi ${name}, your verification code is ${otp}. It expires in 10 minutes.`,
+    html: `<p>Hi ${name},</p><p>Your verification code is <strong>${otp}</strong>.</p><p>It expires in 10 minutes. If you did not request this, please ignore this email.</p>`,
+  });
+}
+
 export async function sendAccountVerified(email, name) {
   return sendEmail({
     to: email,

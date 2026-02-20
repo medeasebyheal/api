@@ -1,10 +1,22 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { User } from '../models/User.js';
 import { UserPackage } from '../models/UserPackage.js';
-import { sendRegistrationConfirmation } from '../utils/email.js';
+import { Plan } from '../models/Plan.js';
+import { OtpVerification } from '../models/OtpVerification.js';
+import { sendRegistrationConfirmation, sendOtpVerification } from '../utils/email.js';
 
 const signToken = (userId) =>
   jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+
+function generateOtp(length = 6) {
+  const digits = '0123456789';
+  let otp = '';
+  for (let i = 0; i < length; i++) {
+    otp += digits[crypto.randomInt(0, digits.length)];
+  }
+  return otp;
+}
 
 export const register = async (req, res, next) => {
   try {
@@ -13,7 +25,43 @@ export const register = async (req, res, next) => {
     if (existing) {
       return res.status(400).json({ message: 'Email already registered' });
     }
-    const user = await User.create({ name, email, password, contact, role: 'student' });
+    const otp = generateOtp(6);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    await OtpVerification.deleteMany({ email });
+    await OtpVerification.create({ email, otp, expiresAt });
+    await sendOtpVerification(email, otp, name).catch((err) => console.warn('OTP email failed:', err));
+    res.status(200).json({
+      pendingVerification: true,
+      email,
+      message: 'Verification code sent to your email',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const verifyOtp = async (req, res, next) => {
+  try {
+    const { email, otp, name, password, contact } = req.body;
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
+    const record = await OtpVerification.findOne({ email, otp });
+    if (!record) {
+      return res.status(400).json({ message: 'Invalid or expired verification code' });
+    }
+    if (new Date() > record.expiresAt) {
+      await OtpVerification.deleteOne({ _id: record._id });
+      return res.status(400).json({ message: 'Verification code has expired' });
+    }
+    const user = await User.create({ name, email, password, contact: contact || '', role: 'student' });
+    const freeTrialPlan = await Plan.findOne({ planKey: 'free-trial' });
+    if (freeTrialPlan) {
+      user.activePlanId = freeTrialPlan._id;
+      await user.save();
+    }
+    await OtpVerification.deleteOne({ _id: record._id });
     await sendRegistrationConfirmation(email, name).catch(() => {});
     const token = signToken(user._id);
     const u = await User.findById(user._id).select('-password');

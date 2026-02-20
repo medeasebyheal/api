@@ -7,7 +7,9 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "seed:packages": "node scripts/seedYearPackages.js",
+    "seed:clean": "node scripts/seedClean.js",
+    "seed:packages": "node scripts/seedPlans.js",
+    "seed:reset": "node scripts/seedReset.js",
     "seed:resources": "node scripts/seedSubjectsMcqsOspes.js",
     "seed:ospe": "node scripts/seedOspeSample.js"
   },

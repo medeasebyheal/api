@@ -10,6 +10,7 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ['student', 'admin'], default: 'student' },
     isVerified: { type: Boolean, default: false },
     freeTrialUsed: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', default: null },
+    activePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', default: null },
     academicDetails: {
       institution: String,
       year: Number,
