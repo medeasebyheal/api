@@ -5,6 +5,7 @@ import { UserPackage } from '../models/UserPackage.js';
 import { Plan } from '../models/Plan.js';
 import { OtpVerification } from '../models/OtpVerification.js';
 import { sendRegistrationConfirmation, sendOtpVerification } from '../utils/email.js';
+import { uploadToCloudinary } from '../config/cloudinary.js';
 
 const signToken = (userId) =>
   jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
@@ -105,6 +106,39 @@ export const me = async (req, res, next) => {
     const packages = await UserPackage.find({ user: req.user._id, status: 'active' })
       .populate('package');
     res.json({ user: { ...req.user.toObject(), packages } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateProfile = async (req, res, next) => {
+  try {
+    const { name, contact, academicDetails } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { name, contact, academicDetails },
+      { new: true, runValidators: true }
+    ).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
+    res.json({ user: { ...user.toObject(), packages } });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const updateProfilePicture = async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ message: 'Profile image required' });
+    const result = await uploadToCloudinary(req.file.buffer, 'medease/avatars');
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { avatarUrl: result.secure_url },
+      { new: true }
+    ).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
+    res.json({ user: { ...user.toObject(), packages } });
   } catch (err) {
     next(err);
   }

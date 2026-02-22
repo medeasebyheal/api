@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     isVerified: { type: Boolean, default: false },
     freeTrialUsed: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', default: null },
     activePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', default: null },
+    avatarUrl: { type: String, trim: true },
     academicDetails: {
       institution: String,
       year: Number,

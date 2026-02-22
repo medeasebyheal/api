@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { auth } from '../middleware/auth.js';
-import { register, login, me, createAdmin, verifyOtp } from '../controllers/authController.js';
+import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture } from '../controllers/authController.js';
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
 
 const validate = (req, res, next) => {
   const errors = validationResult(req);
@@ -47,6 +49,13 @@ router.post(
 );
 
 router.get('/me', auth, me);
+router.patch('/profile', auth, updateProfile);
+router.patch(
+  '/profile-picture',
+  auth,
+  upload.single('avatar'),
+  updateProfilePicture
+);
 
 router.post(
   '/create-admin',

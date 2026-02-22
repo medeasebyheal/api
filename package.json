@@ -11,7 +11,8 @@
     "seed:packages": "node scripts/seedPlans.js",
     "seed:reset": "node scripts/seedReset.js",
     "seed:resources": "node scripts/seedSubjectsMcqsOspes.js",
-    "seed:ospe": "node scripts/seedOspeSample.js"
+    "seed:ospe": "node scripts/seedOspeSample.js",
+    "seed:foundation": "node scripts/seedFoundationModule.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

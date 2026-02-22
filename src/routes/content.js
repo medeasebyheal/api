@@ -6,7 +6,9 @@ import {
   listProff,
   listYears,
   listModules,
+  getModule,
   listSubjects,
+  getSubject,
   listTopics,
   getTopic,
   checkTopicAccess,
@@ -30,7 +32,9 @@ async function optionalAuth(req, res, next) {
 router.get('/proff', listProff);
 router.get('/years', listYears);
 router.get('/years/:yearId/modules', listModules);
+router.get('/modules/:moduleId', getModule);
 router.get('/modules/:moduleId/subjects', listSubjects);
+router.get('/subjects/:subjectId', getSubject);
 router.get('/subjects/:subjectId/topics', listTopics);
 router.get('/topics/:id', optionalAuth, getTopic);
 router.get('/topics/:id/access', auth, checkTopicAccess);

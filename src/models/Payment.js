@@ -12,6 +12,14 @@ const paymentSchema = new mongoose.Schema(
     verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     verifiedAt: { type: Date },
     rejectionReason: { type: String },
+    academicDetails: {
+      institution: { type: String, trim: true },
+      college: { type: String, trim: true },
+      rollNumber: { type: String, trim: true },
+      batch: { type: String, trim: true },
+      year: { type: Number },
+      part: { type: Number },
+    },
   },
   { timestamps: true }
 );

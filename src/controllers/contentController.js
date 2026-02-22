@@ -35,12 +35,32 @@ export const listModules = async (req, res, next) => {
   }
 };
 
+export const getModule = async (req, res, next) => {
+  try {
+    const mod = await Module.findById(req.params.moduleId).populate('year', 'name');
+    if (!mod) return res.status(404).json({ message: 'Module not found' });
+    res.json(mod);
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const listSubjects = async (req, res, next) => {
   try {
     const subjects = await Subject.find({ module: req.params.moduleId })
       .sort({ order: 1 })
       .populate('topicIds');
     res.json(subjects);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getSubject = async (req, res, next) => {
+  try {
+    const sub = await Subject.findById(req.params.subjectId).populate('module', 'name');
+    if (!sub) return res.status(404).json({ message: 'Subject not found' });
+    res.json(sub);
   } catch (err) {
     next(err);
   }
@@ -57,7 +77,8 @@ export const listTopics = async (req, res, next) => {
 
 export const getTopic = async (req, res, next) => {
   try {
-    const topic = await Topic.findById(req.params.id).populate('subject');
+    const topic = await Topic.findById(req.params.id)
+      .populate({ path: 'subject', populate: { path: 'module', select: 'name' } });
     if (!topic) return res.status(404).json({ message: 'Topic not found' });
 
     const includeMcqs = req.query.includeMcqs === 'true';

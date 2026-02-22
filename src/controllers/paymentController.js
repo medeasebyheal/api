@@ -8,7 +8,17 @@ import { sendPaymentApproved, sendPaymentRejected, sendAccountVerified, sendPaym
 
 export const create = async (req, res, next) => {
   try {
-    const { packageId, amount, promoCode: promoCodeInput } = req.body;
+    const {
+      packageId,
+      amount,
+      promoCode: promoCodeInput,
+      institution,
+      college,
+      rollNumber,
+      batch,
+      year,
+      part,
+    } = req.body;
     const receiptUrl = req.file?.url;
     if (!receiptUrl) return res.status(400).json({ message: 'Receipt image is required' });
     const pkg = await Package.findById(packageId);
@@ -36,6 +46,18 @@ export const create = async (req, res, next) => {
       }
     }
 
+    const academicDetails =
+      institution != null || college != null || rollNumber != null || batch != null || year != null || part != null
+        ? {
+            institution: institution?.trim?.() || undefined,
+            college: college?.trim?.() || undefined,
+            rollNumber: rollNumber?.trim?.() || undefined,
+            batch: batch?.trim?.() || undefined,
+            year: year !== '' && year !== undefined ? Number(year) : undefined,
+            part: part !== '' && part !== undefined ? Number(part) : undefined,
+          }
+        : undefined;
+
     const payment = await Payment.create({
       user: req.user._id,
       package: packageId,
@@ -44,6 +66,7 @@ export const create = async (req, res, next) => {
       promoCode: appliedPromoId,
       receiptUrl,
       status: 'pending',
+      ...(academicDetails && { academicDetails }),
     });
 
     if (appliedPromoId) {
