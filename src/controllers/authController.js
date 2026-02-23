@@ -145,10 +145,19 @@ export const updateProfilePicture = async (req, res, next) => {
 };
 
 /**
- * Create super admin. Requires SUPER_ADMIN_SECRET in env and in request (body.secret or header x-super-admin-secret).
+ * Create super admin. Callable only once per deployment.
+ * Requires SUPER_ADMIN_SECRET in env and in request (body.secret or header x-super-admin-secret).
+ * After the first admin exists, this endpoint returns 410 Gone.
  */
 export const createAdmin = async (req, res, next) => {
   try {
+    const existingAdmin = await User.findOne({ role: 'admin' });
+    if (existingAdmin) {
+      return res.status(410).json({
+        message: 'Super admin already exists. This endpoint can only be used once.',
+      });
+    }
+
     const secret = process.env.SUPER_ADMIN_SECRET;
     if (!secret) {
       return res.status(503).json({ message: 'Super admin creation not configured' });

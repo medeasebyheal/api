@@ -2,6 +2,7 @@ import { Year } from '../models/Year.js';
 import { Module } from '../models/Module.js';
 import { Subject } from '../models/Subject.js';
 import { Topic } from '../models/Topic.js';
+import { TopicResource } from '../models/TopicResource.js';
 import { User } from '../models/User.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { canAccessTopic, canAccessTopicWithFreeTrial, canAccessModule } from '../utils/access.js';
@@ -153,6 +154,17 @@ export const checkModuleAccess = async (req, res, next) => {
     if (!req.user) return res.status(401).json({ allowed: false });
     const result = await canAccessModule(req.user._id, req.params.moduleId);
     res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listTopicResources = async (req, res, next) => {
+  try {
+    const topic = await Topic.findById(req.params.topicId);
+    if (!topic) return res.status(404).json({ message: 'Topic not found' });
+    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ order: 1 });
+    res.json(resources);
   } catch (err) {
     next(err);
   }

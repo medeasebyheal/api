@@ -5,6 +5,7 @@ import { Subject } from '../models/Subject.js';
 import { Topic } from '../models/Topic.js';
 import { Mcq } from '../models/Mcq.js';
 import { OneShotLecture } from '../models/OneShotLecture.js';
+import { TopicResource } from '../models/TopicResource.js';
 import { Ospe } from '../models/Ospe.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { ProffMcq } from '../models/ProffMcq.js';
@@ -15,10 +16,32 @@ import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
 import { parseBulkMcqs } from '../utils/mcqBulkParser.js';
 
-// Programs
+// Programs (with years and modules count)
 export const listPrograms = async (req, res, next) => {
   try {
-    const programs = await Program.find().sort({ order: 1 });
+    const programs = await Program.aggregate([
+      { $sort: { order: 1 } },
+      {
+        $lookup: { from: 'years', localField: '_id', foreignField: 'program', as: 'years' },
+      },
+      { $addFields: { yearsCount: { $size: '$years' } } },
+      {
+        $lookup: {
+          from: 'modules',
+          let: { yearIds: '$years._id' },
+          pipeline: [{ $match: { $expr: { $in: ['$year', '$$yearIds'] } } }, { $count: 'c' }],
+          as: 'modCount',
+        },
+      },
+      {
+        $addFields: {
+          modulesCount: {
+            $ifNull: [{ $getField: { field: 'c', input: { $arrayElemAt: ['$modCount', 0] } } }, 0],
+          },
+        },
+      },
+      { $project: { years: 0, modCount: 0 } },
+    ]);
     res.json(programs);
   } catch (err) {
     next(err);
@@ -52,11 +75,26 @@ export const deleteProgram = async (req, res, next) => {
   }
 };
 
-// Years
+// Years (with modulesCount when listing all)
 export const listYears = async (req, res, next) => {
   try {
     const filter = req.query.programId ? { program: req.query.programId } : {};
-    const years = await Year.find(filter).sort({ order: 1 }).populate('program', 'name order');
+    const useAggregation = !req.query.programId;
+    if (useAggregation) {
+      const years = await Year.aggregate([
+        { $match: Object.keys(filter).length ? filter : {} },
+        { $sort: { order: 1 } },
+        { $lookup: { from: 'modules', localField: '_id', foreignField: 'year', as: 'modules' } },
+        { $addFields: { modulesCount: { $size: '$modules' } } },
+        { $project: { modules: 0 } },
+        { $lookup: { from: 'programs', localField: 'program', foreignField: '_id', as: 'programDoc' } },
+        { $unwind: { path: '$programDoc', preserveNullAndEmptyArrays: true } },
+        { $addFields: { program: '$programDoc' } },
+        { $project: { programDoc: 0 } },
+      ]);
+      return res.json(years);
+    }
+    const years = await Year.find(filter).sort({ order: 1 }).populate('program', 'name order').lean();
     res.json(years);
   } catch (err) {
     next(err);
@@ -126,7 +164,11 @@ export const deleteModule = async (req, res, next) => {
 };
 export const listAllModules = async (req, res, next) => {
   try {
-    const modules = await Module.find().sort({ order: 1 }).populate('year', 'name order');
+    const modules = await Module.find()
+      .sort({ order: 1 })
+      .populate('year', 'name order')
+      .populate('subjectIds', 'name')
+      .lean();
     res.json(modules);
   } catch (err) {
     next(err);
@@ -225,6 +267,7 @@ export const deleteTopic = async (req, res, next) => {
     await Subject.updateOne({ _id: topic.subject }, { $pull: { topicIds: topic._id } });
     await Mcq.deleteMany({ topic: topic._id });
     await OneShotLecture.deleteMany({ topic: topic._id });
+    await TopicResource.deleteMany({ topic: topic._id });
     res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);
@@ -234,7 +277,15 @@ export const listAllTopics = async (req, res, next) => {
   try {
     const topics = await Topic.find()
       .sort({ order: 1 })
-      .populate({ path: 'subject', select: 'name order module', populate: { path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } } });
+      .populate({ path: 'subject', select: 'name order module', populate: { path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } } })
+      .lean();
+    const topicIds = topics.map((t) => t._id);
+    const counts =
+      topicIds.length > 0
+        ? await Mcq.aggregate([{ $match: { topic: { $in: topicIds } } }, { $group: { _id: '$topic', count: { $sum: 1 } } }])
+        : [];
+    const countMap = Object.fromEntries(counts.map((c) => [c._id.toString(), c.count]));
+    topics.forEach((t) => (t.mcqCount = countMap[t._id.toString()] ?? 0));
     res.json(topics);
   } catch (err) {
     next(err);
@@ -353,6 +404,65 @@ export const deleteOneShotLecture = async (req, res, next) => {
   try {
     const lecture = await OneShotLecture.findOneAndDelete({ _id: req.params.lectureId, topic: req.params.topicId });
     if (!lecture) return res.status(404).json({ message: 'One shot lecture not found' });
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Topic Resources (PDF upload + link)
+export const listTopicResources = async (req, res, next) => {
+  try {
+    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ order: 1 });
+    res.json(resources);
+  } catch (err) {
+    next(err);
+  }
+};
+export const createTopicResource = async (req, res, next) => {
+  try {
+    const { type, title, url: bodyUrl, order } = req.body || {};
+    if (!type || !title) return res.status(400).json({ message: 'type and title required' });
+    if (type !== 'pdf' && type !== 'link') return res.status(400).json({ message: 'type must be pdf or link' });
+
+    let url = bodyUrl && bodyUrl.trim();
+    if (type === 'pdf' && req.file?.buffer) {
+      const { uploadRawToCloudinary } = await import('../config/cloudinary.js');
+      const result = await uploadRawToCloudinary(req.file.buffer, 'medease/topic-resources');
+      url = result.secure_url;
+    }
+    if (!url) return res.status(400).json({ message: type === 'pdf' ? 'PDF file or url required' : 'url required for link' });
+
+    const resource = await TopicResource.create({
+      topic: req.params.topicId,
+      type,
+      title: title.trim(),
+      url,
+      order: order != null ? Number(order) : 0,
+    });
+    res.status(201).json(resource);
+  } catch (err) {
+    next(err);
+  }
+};
+export const updateTopicResource = async (req, res, next) => {
+  try {
+    const resource = await TopicResource.findOne({ _id: req.params.resourceId, topic: req.params.topicId });
+    if (!resource) return res.status(404).json({ message: 'Topic resource not found' });
+    const { title, url, order } = req.body || {};
+    if (title != null) resource.title = title.trim();
+    if (url != null) resource.url = url.trim();
+    if (order != null) resource.order = Number(order);
+    await resource.save();
+    res.json(resource);
+  } catch (err) {
+    next(err);
+  }
+};
+export const deleteTopicResource = async (req, res, next) => {
+  try {
+    const resource = await TopicResource.findOneAndDelete({ _id: req.params.resourceId, topic: req.params.topicId });
+    if (!resource) return res.status(404).json({ message: 'Topic resource not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);
@@ -905,10 +1015,20 @@ export const deletePackage = async (req, res, next) => {
   }
 };
 
-// Dashboard stats
+// Dashboard stats + recent users & payments
 export const dashboardStats = async (req, res, next) => {
   try {
-    const [userCount, pendingPayments, programCount, yearCount, moduleCount, topicCount, mcqCount] = await Promise.all([
+    const [
+      userCount,
+      pendingPayments,
+      programCount,
+      yearCount,
+      moduleCount,
+      topicCount,
+      mcqCount,
+      recentUsers,
+      recentPayments,
+    ] = await Promise.all([
       User.countDocuments({ role: 'student' }),
       Payment.countDocuments({ status: 'pending' }),
       Program.countDocuments(),
@@ -916,6 +1036,13 @@ export const dashboardStats = async (req, res, next) => {
       Module.countDocuments(),
       Topic.countDocuments(),
       Mcq.countDocuments(),
+      User.find({ role: 'student' }).select('name email isVerified').sort({ createdAt: -1 }).limit(5).lean(),
+      Payment.find()
+        .populate('user', 'name email')
+        .populate('package', 'name')
+        .sort({ createdAt: -1 })
+        .limit(8)
+        .lean(),
     ]);
     res.json({
       userCount,
@@ -925,6 +1052,8 @@ export const dashboardStats = async (req, res, next) => {
       moduleCount,
       topicCount,
       mcqCount,
+      recentUsers,
+      recentPayments,
     });
   } catch (err) {
     next(err);

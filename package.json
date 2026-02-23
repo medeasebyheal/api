@@ -12,7 +12,8 @@
     "seed:reset": "node scripts/seedReset.js",
     "seed:resources": "node scripts/seedSubjectsMcqsOspes.js",
     "seed:ospe": "node scripts/seedOspeSample.js",
-    "seed:foundation": "node scripts/seedFoundationModule.js"
+    "seed:foundation": "node scripts/seedFoundationModule.js",
+    "seed:superadmin": "node scripts/seedSuperAdmin.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

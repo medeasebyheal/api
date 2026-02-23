@@ -11,6 +11,7 @@ import {
   getSubject,
   listTopics,
   getTopic,
+  listTopicResources,
   checkTopicAccess,
   checkModuleAccess,
 } from '../controllers/contentController.js';
@@ -37,6 +38,7 @@ router.get('/modules/:moduleId/subjects', listSubjects);
 router.get('/subjects/:subjectId', getSubject);
 router.get('/subjects/:subjectId/topics', listTopics);
 router.get('/topics/:id', optionalAuth, getTopic);
+router.get('/topics/:topicId/resources', listTopicResources);
 router.get('/topics/:id/access', auth, checkTopicAccess);
 router.get('/modules/:moduleId/access', auth, checkModuleAccess);
 

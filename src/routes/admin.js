@@ -5,6 +5,7 @@ import { uploadToCloudinary } from '../config/cloudinary.js';
 import * as admin from '../controllers/adminContentController.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
 const router = Router();
 router.use(auth);
@@ -62,6 +63,11 @@ router.get('/topics/:topicId/one-shot-lectures', admin.listOneShotLectures);
 router.post('/topics/:topicId/one-shot-lectures', admin.createOneShotLecture);
 router.put('/topics/:topicId/one-shot-lectures/:lectureId', admin.updateOneShotLecture);
 router.delete('/topics/:topicId/one-shot-lectures/:lectureId', admin.deleteOneShotLecture);
+
+router.get('/topics/:topicId/resources', admin.listTopicResources);
+router.post('/topics/:topicId/resources', uploadPdf.single('file'), admin.createTopicResource);
+router.put('/topics/:topicId/resources/:resourceId', admin.updateTopicResource);
+router.delete('/topics/:topicId/resources/:resourceId', admin.deleteTopicResource);
 
 router.get('/modules/:moduleId/ospes', admin.listOspes);
 router.post('/modules/:moduleId/ospes', admin.createOspe);
