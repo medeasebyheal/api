@@ -17,7 +17,7 @@ export const listByModule = async (req, res, next) => {
     if (!access.allowed) {
       return res.status(403).json({ message: 'Access denied to this module' });
     }
-    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ order: 1 });
+    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
     res.json(ospes);
   } catch (err) {
     next(err);
@@ -33,10 +33,9 @@ export const getOne = async (req, res, next) => {
     if (!access.allowed) return res.status(403).json({ message: 'Access denied' });
     const doc = ospe.toObject ? ospe.toObject() : ospe;
     if (!doc.stations?.length && doc.questions?.length) {
-      doc.stations = doc.questions.map((q, i) => ({
+      doc.stations = doc.questions.map((q) => ({
         imageUrl: q.imageUrl,
         questions: [{ ...q, imageUrl: undefined }],
-        order: i,
       }));
     }
     res.json(doc);

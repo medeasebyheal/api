@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { auth, requireRole } from '../middleware/auth.js';
+import { parseMcqRateLimiter } from '../middleware/rateLimitParse.js';
 import multer from 'multer';
 import { uploadToCloudinary } from '../config/cloudinary.js';
 import * as admin from '../controllers/adminContentController.js';
@@ -56,13 +57,13 @@ router.get('/topics/:topicId/mcqs/:mcqId', admin.getMcq);
 router.post('/topics/:topicId/mcqs', admin.createMcq);
 router.put('/topics/:topicId/mcqs/:mcqId', admin.updateMcq);
 router.delete('/topics/:topicId/mcqs/:mcqId', admin.deleteMcq);
-router.post('/topics/:topicId/mcqs/parse', admin.parseBulkMcqsPreview);
+router.post('/topics/:topicId/mcqs/parse', parseMcqRateLimiter, admin.parseBulkMcqsPreview);
 router.post('/topics/:topicId/mcqs/bulk', admin.bulkCreateMcqs);
 
-router.get('/topics/:topicId/one-shot-lectures', admin.listOneShotLectures);
-router.post('/topics/:topicId/one-shot-lectures', admin.createOneShotLecture);
-router.put('/topics/:topicId/one-shot-lectures/:lectureId', admin.updateOneShotLecture);
-router.delete('/topics/:topicId/one-shot-lectures/:lectureId', admin.deleteOneShotLecture);
+router.get('/subjects/:subjectId/one-shot-lectures', admin.listOneShotLectures);
+router.post('/subjects/:subjectId/one-shot-lectures', admin.createOneShotLecture);
+router.put('/subjects/:subjectId/one-shot-lectures/:lectureId', admin.updateOneShotLecture);
+router.delete('/subjects/:subjectId/one-shot-lectures/:lectureId', admin.deleteOneShotLecture);
 
 router.get('/topics/:topicId/resources', admin.listTopicResources);
 router.post('/topics/:topicId/resources', uploadPdf.single('file'), admin.createTopicResource);
@@ -85,7 +86,7 @@ router.get('/proff/jsmu/years/:yearId/papers/:paperId/mcqs/:mcqId', admin.getPro
 router.post('/proff/jsmu/years/:yearId/papers/:paperId/mcqs', admin.createProffJsmuPaperMcq);
 router.put('/proff/jsmu/years/:yearId/papers/:paperId/mcqs/:mcqId', admin.updateProffJsmuPaperMcq);
 router.delete('/proff/jsmu/years/:yearId/papers/:paperId/mcqs/:mcqId', admin.deleteProffJsmuPaperMcq);
-router.post('/proff/jsmu/years/:yearId/papers/:paperId/mcqs/parse', admin.parseProffJsmuPaperMcqs);
+router.post('/proff/jsmu/years/:yearId/papers/:paperId/mcqs/parse', parseMcqRateLimiter, admin.parseProffJsmuPaperMcqs);
 router.post('/proff/jsmu/years/:yearId/papers/:paperId/mcqs/bulk', admin.bulkCreateProffJsmuPaperMcqs);
 router.get('/proff/jsmu/years/:yearId/papers/:paperId/ospe', admin.getProffJsmuPaperOspe);
 router.put('/proff/jsmu/years/:yearId/papers/:paperId/ospe', admin.upsertProffJsmuPaperOspe);
@@ -98,7 +99,7 @@ router.get('/proff/other/years/:yearId/subjects/:subjectId/mcqs/:mcqId', admin.g
 router.post('/proff/other/years/:yearId/subjects/:subjectId/mcqs', admin.createProffOtherSubjectMcq);
 router.put('/proff/other/years/:yearId/subjects/:subjectId/mcqs/:mcqId', admin.updateProffOtherSubjectMcq);
 router.delete('/proff/other/years/:yearId/subjects/:subjectId/mcqs/:mcqId', admin.deleteProffOtherSubjectMcq);
-router.post('/proff/other/years/:yearId/subjects/:subjectId/mcqs/parse', admin.parseProffOtherSubjectMcqs);
+router.post('/proff/other/years/:yearId/subjects/:subjectId/mcqs/parse', parseMcqRateLimiter, admin.parseProffOtherSubjectMcqs);
 router.post('/proff/other/years/:yearId/subjects/:subjectId/mcqs/bulk', admin.bulkCreateProffOtherSubjectMcqs);
 router.get('/proff/other/years/:yearId/subjects/:subjectId/ospe', admin.getProffOtherSubjectOspe);
 router.put('/proff/other/years/:yearId/subjects/:subjectId/ospe', admin.upsertProffOtherSubjectOspe);

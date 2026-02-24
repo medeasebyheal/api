@@ -1,14 +1,15 @@
 import mongoose from 'mongoose';
+import { softDelete } from './plugins/softDelete.js';
 
 const moduleSchema = new mongoose.Schema(
   {
     year: { type: mongoose.Schema.Types.ObjectId, ref: 'Year', required: true },
     name: { type: String, required: true, trim: true },
-    order: { type: Number, default: 1 },
     imageUrl: { type: String, trim: true, default: '' },
     subjectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
   },
   { timestamps: true }
 );
+softDelete(moduleSchema);
 
 export const Module = mongoose.model('Module', moduleSchema);

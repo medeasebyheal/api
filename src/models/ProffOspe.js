@@ -10,13 +10,11 @@ const ospeQuestionSchema = new mongoose.Schema({
   options: [{ type: String }],
   correctIndex: { type: Number },
   expectedAnswer: { type: String },
-  order: { type: Number, default: 0 },
 }, { _id: true });
 
 const ospeStationSchema = new mongoose.Schema({
   imageUrl: { type: String, trim: true },
   questions: [ospeQuestionSchema],
-  order: { type: Number, default: 0 },
 }, { _id: true });
 
 const ospeLegacyQuestionSchema = new mongoose.Schema({
@@ -26,7 +24,6 @@ const ospeLegacyQuestionSchema = new mongoose.Schema({
   options: [{ type: String }],
   correctIndex: { type: Number },
   expectedAnswer: { type: String },
-  order: { type: Number, default: 0 },
 }, { _id: true });
 
 const proffOspeSchema = new mongoose.Schema(
@@ -39,7 +36,6 @@ const proffOspeSchema = new mongoose.Schema(
     type: { type: String, enum: ['picture_mcq', 'viva_written'] },
     stations: [ospeStationSchema],
     questions: [ospeLegacyQuestionSchema],
-    order: { type: Number, default: 1 },
   },
   { timestamps: true }
 );

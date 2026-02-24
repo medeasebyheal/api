@@ -14,13 +14,14 @@ import { Package } from '../models/Package.js';
 import { PromoCode } from '../models/PromoCode.js';
 import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
-import { parseBulkMcqs } from '../utils/mcqBulkParser.js';
+import { parseBulkMcqsWithFallback } from '../utils/mcqGeminiParser.js';
 
 // Programs (with years and modules count)
 export const listPrograms = async (req, res, next) => {
   try {
     const programs = await Program.aggregate([
-      { $sort: { order: 1 } },
+      { $match: { deleted: { $ne: true } } },
+      { $sort: { createdAt: 1 } },
       {
         $lookup: { from: 'years', localField: '_id', foreignField: 'program', as: 'years' },
       },
@@ -64,9 +65,11 @@ export const updateProgram = async (req, res, next) => {
     next(err);
   }
 };
+const softDeleteSet = { $set: { deleted: true, deletedAt: new Date() } };
+
 export const deleteProgram = async (req, res, next) => {
   try {
-    const program = await Program.findByIdAndDelete(req.params.id);
+    const program = await Program.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!program) return res.status(404).json({ message: 'Program not found' });
     await Year.updateMany({ program: req.params.id }, { $unset: { program: 1 } });
     res.json({ message: 'Deleted' });
@@ -82,8 +85,8 @@ export const listYears = async (req, res, next) => {
     const useAggregation = !req.query.programId;
     if (useAggregation) {
       const years = await Year.aggregate([
-        { $match: Object.keys(filter).length ? filter : {} },
-        { $sort: { order: 1 } },
+        { $match: { ...(Object.keys(filter).length ? filter : {}), deleted: { $ne: true } } },
+        { $sort: { createdAt: 1 } },
         { $lookup: { from: 'modules', localField: '_id', foreignField: 'year', as: 'modules' } },
         { $addFields: { modulesCount: { $size: '$modules' } } },
         { $project: { modules: 0 } },
@@ -94,7 +97,7 @@ export const listYears = async (req, res, next) => {
       ]);
       return res.json(years);
     }
-    const years = await Year.find(filter).sort({ order: 1 }).populate('program', 'name order').lean();
+    const years = await Year.find(filter).sort({ createdAt: 1 }).populate('program', 'name').lean();
     res.json(years);
   } catch (err) {
     next(err);
@@ -119,7 +122,7 @@ export const updateYear = async (req, res, next) => {
 };
 export const deleteYear = async (req, res, next) => {
   try {
-    const year = await Year.findByIdAndDelete(req.params.id);
+    const year = await Year.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!year) return res.status(404).json({ message: 'Year not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -130,7 +133,7 @@ export const deleteYear = async (req, res, next) => {
 // Modules
 export const listModules = async (req, res, next) => {
   try {
-    const modules = await Module.find({ year: req.params.yearId }).sort({ order: 1 });
+    const modules = await Module.find({ year: req.params.yearId }).sort({ createdAt: 1 });
     res.json(modules);
   } catch (err) {
     next(err);
@@ -155,7 +158,7 @@ export const updateModule = async (req, res, next) => {
 };
 export const deleteModule = async (req, res, next) => {
   try {
-    const mod = await Module.findByIdAndDelete(req.params.id);
+    const mod = await Module.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!mod) return res.status(404).json({ message: 'Module not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -165,8 +168,8 @@ export const deleteModule = async (req, res, next) => {
 export const listAllModules = async (req, res, next) => {
   try {
     const modules = await Module.find()
-      .sort({ order: 1 })
-      .populate('year', 'name order')
+      .sort({ createdAt: 1 })
+      .populate('year', 'name')
       .populate('subjectIds', 'name')
       .lean();
     res.json(modules);
@@ -178,7 +181,7 @@ export const listAllModules = async (req, res, next) => {
 // Subjects
 export const listSubjects = async (req, res, next) => {
   try {
-    const subjects = await Subject.find({ module: req.params.moduleId }).sort({ order: 1 });
+    const subjects = await Subject.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
     res.json(subjects);
   } catch (err) {
     next(err);
@@ -209,8 +212,10 @@ export const updateSubject = async (req, res, next) => {
 };
 export const deleteSubject = async (req, res, next) => {
   try {
-    const sub = await Subject.findByIdAndDelete(req.params.id);
+    const sub = await Subject.findById(req.params.id);
     if (!sub) return res.status(404).json({ message: 'Subject not found' });
+    await OneShotLecture.updateMany({ subject: sub._id }, softDeleteSet);
+    await Subject.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     await Module.updateOne({ _id: sub.module }, { $pull: { subjectIds: sub._id } });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -220,8 +225,8 @@ export const deleteSubject = async (req, res, next) => {
 export const listAllSubjects = async (req, res, next) => {
   try {
     const subjects = await Subject.find()
-      .sort({ order: 1 })
-      .populate({ path: 'module', select: 'name order year', populate: { path: 'year', select: 'name _id' } });
+      .sort({ createdAt: 1 })
+      .populate({ path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } });
     res.json(subjects);
   } catch (err) {
     next(err);
@@ -231,7 +236,7 @@ export const listAllSubjects = async (req, res, next) => {
 // Topics
 export const listTopics = async (req, res, next) => {
   try {
-    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ order: 1 });
+    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
     res.json(topics);
   } catch (err) {
     next(err);
@@ -262,12 +267,12 @@ export const updateTopic = async (req, res, next) => {
 };
 export const deleteTopic = async (req, res, next) => {
   try {
-    const topic = await Topic.findByIdAndDelete(req.params.id);
+    const topic = await Topic.findById(req.params.id);
     if (!topic) return res.status(404).json({ message: 'Topic not found' });
+    await Mcq.updateMany({ topic: topic._id }, softDeleteSet);
+    await TopicResource.updateMany({ topic: topic._id }, softDeleteSet);
+    await Topic.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     await Subject.updateOne({ _id: topic.subject }, { $pull: { topicIds: topic._id } });
-    await Mcq.deleteMany({ topic: topic._id });
-    await OneShotLecture.deleteMany({ topic: topic._id });
-    await TopicResource.deleteMany({ topic: topic._id });
     res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);
@@ -276,13 +281,13 @@ export const deleteTopic = async (req, res, next) => {
 export const listAllTopics = async (req, res, next) => {
   try {
     const topics = await Topic.find()
-      .sort({ order: 1 })
-      .populate({ path: 'subject', select: 'name order module', populate: { path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } } })
+      .sort({ createdAt: 1 })
+      .populate({ path: 'subject', select: 'name module', populate: { path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } } })
       .lean();
     const topicIds = topics.map((t) => t._id);
     const counts =
       topicIds.length > 0
-        ? await Mcq.aggregate([{ $match: { topic: { $in: topicIds } } }, { $group: { _id: '$topic', count: { $sum: 1 } } }])
+        ? await Mcq.aggregate([{ $match: { topic: { $in: topicIds }, deleted: { $ne: true } } }, { $group: { _id: '$topic', count: { $sum: 1 } } }])
         : [];
     const countMap = Object.fromEntries(counts.map((c) => [c._id.toString(), c.count]));
     topics.forEach((t) => (t.mcqCount = countMap[t._id.toString()] ?? 0));
@@ -295,7 +300,7 @@ export const listAllTopics = async (req, res, next) => {
 // MCQs
 export const listMcqs = async (req, res, next) => {
   try {
-    const mcqs = await Mcq.find({ topic: req.params.topicId }).sort({ order: 1 });
+    const mcqs = await Mcq.find({ topic: req.params.topicId }).sort({ createdAt: 1 });
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -329,7 +334,7 @@ export const updateMcq = async (req, res, next) => {
 };
 export const deleteMcq = async (req, res, next) => {
   try {
-    const mcq = await Mcq.findByIdAndDelete(req.params.mcqId);
+    const mcq = await Mcq.findByIdAndUpdate(req.params.mcqId, softDeleteSet, { new: true });
     if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -339,8 +344,8 @@ export const deleteMcq = async (req, res, next) => {
 export const parseBulkMcqsPreview = async (req, res, next) => {
   try {
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
-    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [] });
+    const { mcqs, errors, partialBlockIndices, source } = await parseBulkMcqsWithFallback(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source });
   } catch (err) {
     next(err);
   }
@@ -348,7 +353,7 @@ export const parseBulkMcqsPreview = async (req, res, next) => {
 export const bulkCreateMcqs = async (req, res, next) => {
   try {
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    const { mcqs, errors, partialBlockIndices } = await parseBulkMcqsWithFallback(rawText);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
       const m = mcqs[i];
@@ -358,9 +363,7 @@ export const bulkCreateMcqs = async (req, res, next) => {
         options: m.options,
         correctIndex: m.correctIndex,
         explanation: m.explanation || '',
-        videoUrl: m.videoUrl || undefined,
         type: req.body.type || 'text',
-        order: i,
       });
       created.push(doc);
     }
@@ -370,10 +373,10 @@ export const bulkCreateMcqs = async (req, res, next) => {
   }
 };
 
-// One Shot Lectures (YouTube lectures per topic)
+// One Shot Lectures (YouTube lectures per subject)
 export const listOneShotLectures = async (req, res, next) => {
   try {
-    const lectures = await OneShotLecture.find({ topic: req.params.topicId }).sort({ order: 1 });
+    const lectures = await OneShotLecture.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
     res.json(lectures);
   } catch (err) {
     next(err);
@@ -381,7 +384,7 @@ export const listOneShotLectures = async (req, res, next) => {
 };
 export const createOneShotLecture = async (req, res, next) => {
   try {
-    const lecture = await OneShotLecture.create({ ...req.body, topic: req.params.topicId });
+    const lecture = await OneShotLecture.create({ ...req.body, subject: req.params.subjectId });
     res.status(201).json(lecture);
   } catch (err) {
     next(err);
@@ -390,7 +393,7 @@ export const createOneShotLecture = async (req, res, next) => {
 export const updateOneShotLecture = async (req, res, next) => {
   try {
     const lecture = await OneShotLecture.findOneAndUpdate(
-      { _id: req.params.lectureId, topic: req.params.topicId },
+      { _id: req.params.lectureId, subject: req.params.subjectId },
       req.body,
       { new: true }
     );
@@ -402,7 +405,11 @@ export const updateOneShotLecture = async (req, res, next) => {
 };
 export const deleteOneShotLecture = async (req, res, next) => {
   try {
-    const lecture = await OneShotLecture.findOneAndDelete({ _id: req.params.lectureId, topic: req.params.topicId });
+    const lecture = await OneShotLecture.findOneAndUpdate(
+      { _id: req.params.lectureId, subject: req.params.subjectId },
+      softDeleteSet,
+      { new: true }
+    );
     if (!lecture) return res.status(404).json({ message: 'One shot lecture not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -413,7 +420,7 @@ export const deleteOneShotLecture = async (req, res, next) => {
 // Topic Resources (PDF upload + link)
 export const listTopicResources = async (req, res, next) => {
   try {
-    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ order: 1 });
+    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ createdAt: 1 });
     res.json(resources);
   } catch (err) {
     next(err);
@@ -421,7 +428,7 @@ export const listTopicResources = async (req, res, next) => {
 };
 export const createTopicResource = async (req, res, next) => {
   try {
-    const { type, title, url: bodyUrl, order } = req.body || {};
+    const { type, title, url: bodyUrl } = req.body || {};
     if (!type || !title) return res.status(400).json({ message: 'type and title required' });
     if (type !== 'pdf' && type !== 'link') return res.status(400).json({ message: 'type must be pdf or link' });
 
@@ -438,7 +445,6 @@ export const createTopicResource = async (req, res, next) => {
       type,
       title: title.trim(),
       url,
-      order: order != null ? Number(order) : 0,
     });
     res.status(201).json(resource);
   } catch (err) {
@@ -449,10 +455,9 @@ export const updateTopicResource = async (req, res, next) => {
   try {
     const resource = await TopicResource.findOne({ _id: req.params.resourceId, topic: req.params.topicId });
     if (!resource) return res.status(404).json({ message: 'Topic resource not found' });
-    const { title, url, order } = req.body || {};
+    const { title, url } = req.body || {};
     if (title != null) resource.title = title.trim();
     if (url != null) resource.url = url.trim();
-    if (order != null) resource.order = Number(order);
     await resource.save();
     res.json(resource);
   } catch (err) {
@@ -461,7 +466,11 @@ export const updateTopicResource = async (req, res, next) => {
 };
 export const deleteTopicResource = async (req, res, next) => {
   try {
-    const resource = await TopicResource.findOneAndDelete({ _id: req.params.resourceId, topic: req.params.topicId });
+    const resource = await TopicResource.findOneAndUpdate(
+      { _id: req.params.resourceId, topic: req.params.topicId },
+      softDeleteSet,
+      { new: true }
+    );
     if (!resource) return res.status(404).json({ message: 'Topic resource not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -472,7 +481,7 @@ export const deleteTopicResource = async (req, res, next) => {
 // OSPEs
 export const listOspes = async (req, res, next) => {
   try {
-    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ order: 1 });
+    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
     res.json(ospes);
   } catch (err) {
     next(err);
@@ -497,7 +506,7 @@ export const updateOspe = async (req, res, next) => {
 };
 export const deleteOspe = async (req, res, next) => {
   try {
-    const ospe = await Ospe.findByIdAndDelete(req.params.id);
+    const ospe = await Ospe.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!ospe) return res.status(404).json({ message: 'OSPE not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -529,10 +538,10 @@ export const upsertProff = async (req, res, next) => {
 };
 
 const DEFAULT_JSMU_PAPERS = [
-  { name: 'Paper 1 (Mix MCQs)', type: 'mcq', order: 1 },
-  { name: 'Paper 2 (Mix MCQs)', type: 'mcq', order: 2 },
-  { name: 'OSPE 1', type: 'ospe', order: 3 },
-  { name: 'OSPE 2', type: 'ospe', order: 4 },
+  { name: 'Paper 1 (Mix MCQs)', type: 'mcq' },
+  { name: 'Paper 2 (Mix MCQs)', type: 'mcq' },
+  { name: 'OSPE 1', type: 'ospe' },
+  { name: 'OSPE 2', type: 'ospe' },
 ];
 
 export const getProffJsmu = async (req, res, next) => {
@@ -549,11 +558,10 @@ export const createProffJsmuYear = async (req, res, next) => {
   try {
     let doc = await ProffStructure.findOne({ university: 'jsmu' });
     if (!doc) doc = await ProffStructure.create({ university: 'jsmu', years: [] });
-    const { name, order, papers } = req.body;
-    const nextOrder = typeof order === 'number' ? order : (doc.years?.length ?? 0);
+    const { name, papers } = req.body;
     const yearName = name || `Year ${(doc.years?.length ?? 0) + 1}`;
     const yearPapers = Array.isArray(papers) && papers.length > 0 ? papers : DEFAULT_JSMU_PAPERS;
-    doc.years.push({ name: yearName, order: nextOrder, papers: yearPapers });
+    doc.years.push({ name: yearName, papers: yearPapers });
     await doc.save();
     const added = doc.years[doc.years.length - 1];
     res.status(201).json(added);
@@ -568,9 +576,8 @@ export const updateProffJsmuYear = async (req, res, next) => {
     if (!doc) return res.status(404).json({ message: 'JSMU structure not found' });
     const year = doc.years.id(req.params.yearId);
     if (!year) return res.status(404).json({ message: 'Year not found' });
-    const { name, order, papers } = req.body;
+    const { name, papers } = req.body;
     if (name !== undefined) year.name = name;
-    if (order !== undefined) year.order = order;
     if (papers !== undefined) year.papers = papers;
     await doc.save();
     res.json(year);
@@ -608,10 +615,9 @@ export const createProffOtherYear = async (req, res, next) => {
   try {
     let doc = await ProffStructure.findOne({ university: 'other' });
     if (!doc) doc = await ProffStructure.create({ university: 'other', years: [] });
-    const { name, order, subjects } = req.body;
-    const nextOrder = typeof order === 'number' ? order : (doc.years?.length ?? 0);
+    const { name, subjects } = req.body;
     const yearName = name || `Year ${(doc.years?.length ?? 0) + 1}`;
-    doc.years.push({ name: yearName, order: nextOrder, subjects: Array.isArray(subjects) ? subjects : [] });
+    doc.years.push({ name: yearName, subjects: Array.isArray(subjects) ? subjects : [] });
     await doc.save();
     const added = doc.years[doc.years.length - 1];
     res.status(201).json(added);
@@ -626,9 +632,8 @@ export const updateProffOtherYear = async (req, res, next) => {
     if (!doc) return res.status(404).json({ message: 'Other university structure not found' });
     const year = doc.years.id(req.params.yearId);
     if (!year) return res.status(404).json({ message: 'Year not found' });
-    const { name, order, subjects } = req.body;
+    const { name, subjects } = req.body;
     if (name !== undefined) year.name = name;
-    if (order !== undefined) year.order = order;
     if (subjects !== undefined) year.subjects = subjects;
     await doc.save();
     res.json(year);
@@ -679,7 +684,7 @@ export const listProffJsmuPaperMcqs = async (req, res, next) => {
       university: 'jsmu',
       proffYear: req.params.yearId,
       proffPaper: req.params.paperId,
-    }).sort({ order: 1 });
+    }).sort({ createdAt: 1 });
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -737,12 +742,16 @@ export const updateProffJsmuPaperMcq = async (req, res, next) => {
 };
 export const deleteProffJsmuPaperMcq = async (req, res, next) => {
   try {
-    const mcq = await ProffMcq.findOneAndDelete({
-      _id: req.params.mcqId,
-      university: 'jsmu',
-      proffYear: req.params.yearId,
-      proffPaper: req.params.paperId,
-    });
+    const mcq = await ProffMcq.findOneAndUpdate(
+      {
+        _id: req.params.mcqId,
+        university: 'jsmu',
+        proffYear: req.params.yearId,
+        proffPaper: req.params.paperId,
+      },
+      softDeleteSet,
+      { new: true }
+    );
     if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
     res.status(204).send();
   } catch (err) {
@@ -755,8 +764,8 @@ export const parseProffJsmuPaperMcqs = async (req, res, next) => {
     if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
     if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
-    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [] });
+    const { mcqs, errors, partialBlockIndices, source } = await parseBulkMcqsWithFallback(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source });
   } catch (err) {
     next(err);
   }
@@ -767,7 +776,7 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
     if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
     if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    const { mcqs, errors, partialBlockIndices } = await parseBulkMcqsWithFallback(rawText);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
       const m = mcqs[i];
@@ -779,9 +788,7 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
         options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
         correctIndex: m.correctIndex ?? 0,
         explanation: m.explanation || '',
-        videoUrl: m.videoUrl || undefined,
         type: req.body.type || 'text',
-        order: i,
       });
       created.push(doc);
     }
@@ -837,7 +844,7 @@ export const listProffOtherSubjectMcqs = async (req, res, next) => {
       university: 'other',
       proffYear: req.params.yearId,
       proffSubject: req.params.subjectId,
-    }).sort({ order: 1 });
+    }).sort({ createdAt: 1 });
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -892,12 +899,16 @@ export const updateProffOtherSubjectMcq = async (req, res, next) => {
 };
 export const deleteProffOtherSubjectMcq = async (req, res, next) => {
   try {
-    const mcq = await ProffMcq.findOneAndDelete({
-      _id: req.params.mcqId,
-      university: 'other',
-      proffYear: req.params.yearId,
-      proffSubject: req.params.subjectId,
-    });
+    const mcq = await ProffMcq.findOneAndUpdate(
+      {
+        _id: req.params.mcqId,
+        university: 'other',
+        proffYear: req.params.yearId,
+        proffSubject: req.params.subjectId,
+      },
+      softDeleteSet,
+      { new: true }
+    );
     if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
     res.status(204).send();
   } catch (err) {
@@ -909,8 +920,8 @@ export const parseProffOtherSubjectMcqs = async (req, res, next) => {
     const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
     if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
-    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [] });
+    const { mcqs, errors, partialBlockIndices, source } = await parseBulkMcqsWithFallback(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source });
   } catch (err) {
     next(err);
   }
@@ -920,7 +931,7 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
     const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
     if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = parseBulkMcqs(rawText);
+    const { mcqs, errors, partialBlockIndices } = await parseBulkMcqsWithFallback(rawText);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
       const m = mcqs[i];
@@ -932,9 +943,7 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
         options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
         correctIndex: m.correctIndex ?? 0,
         explanation: m.explanation || '',
-        videoUrl: m.videoUrl || undefined,
         type: req.body.type || 'text',
-        order: i,
       });
       created.push(doc);
     }
@@ -1007,7 +1016,7 @@ export const updatePackage = async (req, res, next) => {
 };
 export const deletePackage = async (req, res, next) => {
   try {
-    const pkg = await Package.findByIdAndDelete(req.params.id);
+    const pkg = await Package.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!pkg) return res.status(404).json({ message: 'Package not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
@@ -1018,6 +1027,7 @@ export const deletePackage = async (req, res, next) => {
 // Dashboard stats + recent users & payments
 export const dashboardStats = async (req, res, next) => {
   try {
+    const notDeleted = { deleted: { $ne: true } };
     const [
       userCount,
       pendingPayments,
@@ -1029,13 +1039,13 @@ export const dashboardStats = async (req, res, next) => {
       recentUsers,
       recentPayments,
     ] = await Promise.all([
-      User.countDocuments({ role: 'student' }),
+      User.countDocuments({ role: 'student', ...notDeleted }),
       Payment.countDocuments({ status: 'pending' }),
-      Program.countDocuments(),
-      Year.countDocuments(),
-      Module.countDocuments(),
-      Topic.countDocuments(),
-      Mcq.countDocuments(),
+      Program.countDocuments(notDeleted),
+      Year.countDocuments(notDeleted),
+      Module.countDocuments(notDeleted),
+      Topic.countDocuments(notDeleted),
+      Mcq.countDocuments(notDeleted),
       User.find({ role: 'student' }).select('name email isVerified').sort({ createdAt: -1 }).limit(5).lean(),
       Payment.find()
         .populate('user', 'name email')
@@ -1092,7 +1102,7 @@ export const updatePromoCode = async (req, res, next) => {
 };
 export const deletePromoCode = async (req, res, next) => {
   try {
-    const promo = await PromoCode.findByIdAndDelete(req.params.id);
+    const promo = await PromoCode.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!promo) return res.status(404).json({ message: 'Promo code not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {

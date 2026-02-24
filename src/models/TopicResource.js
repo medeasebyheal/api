@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { softDelete } from './plugins/softDelete.js';
 
 const topicResourceSchema = new mongoose.Schema(
   {
@@ -6,9 +7,9 @@ const topicResourceSchema = new mongoose.Schema(
     type: { type: String, enum: ['pdf', 'link'], required: true },
     title: { type: String, required: true, trim: true },
     url: { type: String, required: true, trim: true },
-    order: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+softDelete(topicResourceSchema);
 
 export const TopicResource = mongoose.model('TopicResource', topicResourceSchema);

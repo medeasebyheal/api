@@ -10,7 +10,7 @@ export const listByTopic = async (req, res, next) => {
     if (!access.allowed && !withTrial) {
       return res.status(403).json({ message: 'Access denied to this topic' });
     }
-    const mcqs = await Mcq.find({ topic: req.params.topicId }).sort({ order: 1 });
+    const mcqs = await Mcq.find({ topic: req.params.topicId }).sort({ createdAt: 1 });
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -33,7 +33,6 @@ export const submitAttempt = async (req, res, next) => {
       correct,
       correctIndex: mcq.correctIndex,
       explanation: mcq.explanation ?? undefined,
-      videoUrl: mcq.videoUrl || null,
     });
   } catch (err) {
     next(err);

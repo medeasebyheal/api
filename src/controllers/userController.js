@@ -1,9 +1,10 @@
 import { User } from '../models/User.js';
+import { UserPackage } from '../models/UserPackage.js';
 
 export const list = async (req, res, next) => {
   try {
     const { page = 1, limit = 20, search, role, verified } = req.query;
-    const filter = {};
+    const filter = { deleted: { $ne: true } };
     if (search) filter.$or = [{ name: new RegExp(search, 'i') }, { email: new RegExp(search, 'i') }];
     if (role) filter.role = role;
     if (verified !== undefined) filter.isVerified = verified === 'true';
@@ -45,13 +46,20 @@ export const update = async (req, res, next) => {
 
 export const verify = async (req, res, next) => {
   try {
-    const user = await User.findByIdAndUpdate(
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const hasActivePackage = await UserPackage.findOne({ user: user._id, status: 'active' });
+    if (!hasActivePackage) {
+      return res.status(400).json({
+        message: 'User must be subscribed to a package before they can be verified.',
+      });
+    }
+    const updated = await User.findByIdAndUpdate(
       req.params.id,
       { isVerified: true },
       { new: true }
     ).select('-password');
-    if (!user) return res.status(404).json({ message: 'User not found' });
-    res.json(user);
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -59,7 +67,11 @@ export const verify = async (req, res, next) => {
 
 export const remove = async (req, res, next) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { deleted: true, deletedAt: new Date() } },
+      { new: true }
+    );
     if (!user) return res.status(404).json({ message: 'User not found' });
     res.json({ message: 'User deleted' });
   } catch (err) {

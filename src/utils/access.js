@@ -3,8 +3,21 @@ import { User } from '../models/User.js';
 import { Topic } from '../models/Topic.js';
 import { Subject } from '../models/Subject.js';
 import { Module } from '../models/Module.js';
+import { Year } from '../models/Year.js';
 
 const isDev = process.env.NODE_ENV === 'development';
+
+/** Resolve the single topic allowed on free trial: 1st topic of 1st subject of 1st module (by createdAt). */
+export async function getFreeTrialTopicId() {
+  const year = await Year.findOne().sort({ createdAt: 1 }).lean();
+  if (!year) return null;
+  const module_ = await Module.findOne({ year: year._id }).sort({ createdAt: 1 }).lean();
+  if (!module_) return null;
+  const subject = await Subject.findOne({ module: module_._id }).sort({ createdAt: 1 }).lean();
+  if (!subject) return null;
+  const topic = await Topic.findOne({ subject: subject._id }).sort({ createdAt: 1 }).lean();
+  return topic?._id ?? null;
+}
 
 async function canAccessModuleByPlan(userId, moduleId) {
   const user = await User.findById(userId).populate({ path: 'activePlanId' });
@@ -41,6 +54,11 @@ export async function canAccessTopicWithFreeTrial(user, topicId) {
     return user.freeTrialUsed.toString() === topicId.toString()
       ? { allowed: true, freeTrial: true }
       : { allowed: false, reason: 'Free trial already used for another topic' };
+  }
+  const freeTrialTopicId = await getFreeTrialTopicId();
+  if (!freeTrialTopicId) return { allowed: false, reason: 'Free trial topic not available' };
+  if (freeTrialTopicId.toString() !== topicId.toString()) {
+    return { allowed: false, reason: 'Free trial allows only the first topic of the first subject of the first module' };
   }
   return { allowed: true, freeTrial: true };
 }

@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { softDelete } from './plugins/softDelete.js';
 
 const packageSchema = new mongoose.Schema(
   {
@@ -14,5 +15,6 @@ const packageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+softDelete(packageSchema);
 
 export const Package = mongoose.model('Package', packageSchema);

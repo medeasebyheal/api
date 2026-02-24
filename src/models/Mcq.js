@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { softDelete } from './plugins/softDelete.js';
 
 const mcqSchema = new mongoose.Schema(
   {
@@ -7,12 +8,11 @@ const mcqSchema = new mongoose.Schema(
     options: [{ type: String, required: true }],
     correctIndex: { type: Number, required: true },
     explanation: { type: String, default: '' },
-    videoUrl: { type: String, trim: true },
     type: { type: String, enum: ['text', 'image', 'guess_until_correct'], default: 'text' },
     imageUrl: { type: String, trim: true },
-    order: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+softDelete(mcqSchema);
 
 export const Mcq = mongoose.model('Mcq', mcqSchema);

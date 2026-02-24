@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { softDelete } from './plugins/softDelete.js';
 
 // Single question within a station (no image here; station has the image)
 const ospeQuestionSchema = new mongoose.Schema({
@@ -11,14 +12,12 @@ const ospeQuestionSchema = new mongoose.Schema({
   options: [{ type: String }],
   correctIndex: { type: Number },
   expectedAnswer: { type: String },
-  order: { type: Number, default: 0 },
 }, { _id: true });
 
 // Station: one picture, multiple questions
 const ospeStationSchema = new mongoose.Schema({
   imageUrl: { type: String, trim: true },
   questions: [ospeQuestionSchema],
-  order: { type: Number, default: 0 },
 }, { _id: true });
 
 // Legacy: flat questions (each could have its own image) - kept for backward compatibility
@@ -29,7 +28,6 @@ const ospeLegacyQuestionSchema = new mongoose.Schema({
   options: [{ type: String }],
   correctIndex: { type: Number },
   expectedAnswer: { type: String },
-  order: { type: Number, default: 0 },
 }, { _id: true });
 
 const ospeSchema = new mongoose.Schema(
@@ -39,9 +37,9 @@ const ospeSchema = new mongoose.Schema(
     type: { type: String, enum: ['picture_mcq', 'viva_written'] },
     stations: [ospeStationSchema],
     questions: [ospeLegacyQuestionSchema],
-    order: { type: Number, default: 1 },
   },
   { timestamps: true }
 );
+softDelete(ospeSchema);
 
 export const Ospe = mongoose.model('Ospe', ospeSchema);

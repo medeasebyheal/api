@@ -3,6 +3,7 @@ import { Module } from '../models/Module.js';
 import { Subject } from '../models/Subject.js';
 import { Topic } from '../models/Topic.js';
 import { TopicResource } from '../models/TopicResource.js';
+import { OneShotLecture } from '../models/OneShotLecture.js';
 import { User } from '../models/User.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { canAccessTopic, canAccessTopicWithFreeTrial, canAccessModule } from '../utils/access.js';
@@ -18,7 +19,7 @@ export const listProff = async (req, res, next) => {
 
 export const listYears = async (req, res, next) => {
   try {
-    const years = await Year.find().sort({ order: 1 });
+    const years = await Year.find().sort({ createdAt: 1 });
     res.json(years);
   } catch (err) {
     next(err);
@@ -28,7 +29,7 @@ export const listYears = async (req, res, next) => {
 export const listModules = async (req, res, next) => {
   try {
     const modules = await Module.find({ year: req.params.yearId })
-      .sort({ order: 1 })
+      .sort({ createdAt: 1 })
       .populate('subjectIds');
     res.json(modules);
   } catch (err) {
@@ -49,7 +50,7 @@ export const getModule = async (req, res, next) => {
 export const listSubjects = async (req, res, next) => {
   try {
     const subjects = await Subject.find({ module: req.params.moduleId })
-      .sort({ order: 1 })
+      .sort({ createdAt: 1 })
       .populate('topicIds');
     res.json(subjects);
   } catch (err) {
@@ -69,7 +70,7 @@ export const getSubject = async (req, res, next) => {
 
 export const listTopics = async (req, res, next) => {
   try {
-    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ order: 1 });
+    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
     res.json(topics);
   } catch (err) {
     next(err);
@@ -86,6 +87,7 @@ export const getTopic = async (req, res, next) => {
     let hasAccess = false;
     let usedFreeTrial = false;
 
+    let canUseFreeTrialForThisTopic = false;
     if (req.user) {
       const withPackage = await canAccessTopic(req.user._id, topic._id);
       if (withPackage.allowed) {
@@ -96,6 +98,9 @@ export const getTopic = async (req, res, next) => {
           hasAccess = true;
           usedFreeTrial = true;
         }
+        if (!req.user.freeTrialUsed && withTrial.allowed) {
+          canUseFreeTrialForThisTopic = true;
+        }
       }
     }
 
@@ -105,6 +110,7 @@ export const getTopic = async (req, res, next) => {
         await User.findByIdAndUpdate(req.user._id, { freeTrialUsed: topic._id });
         hasAccess = true;
         usedFreeTrial = true;
+        canUseFreeTrialForThisTopic = false;
       }
     }
 
@@ -112,18 +118,18 @@ export const getTopic = async (req, res, next) => {
       topic: {
         _id: topic._id,
         name: topic.name,
-        order: topic.order,
         videoUrl: topic.videoUrl,
         content: hasAccess ? topic.content : undefined,
         subject: topic.subject,
       },
       hasAccess,
       usedFreeTrial,
+      canUseFreeTrialForThisTopic,
     };
 
     if (hasAccess && includeMcqs) {
       const { Mcq } = await import('../models/Mcq.js');
-      const mcqs = await Mcq.find({ topic: topic._id }).sort({ order: 1 });
+      const mcqs = await Mcq.find({ topic: topic._id }).sort({ createdAt: 1 });
       response.mcqs = mcqs;
     }
 
@@ -163,8 +169,17 @@ export const listTopicResources = async (req, res, next) => {
   try {
     const topic = await Topic.findById(req.params.topicId);
     if (!topic) return res.status(404).json({ message: 'Topic not found' });
-    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ order: 1 });
+    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ createdAt: 1 });
     res.json(resources);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listSubjectOneShotLectures = async (req, res, next) => {
+  try {
+    const lectures = await OneShotLecture.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
+    res.json(lectures);
   } catch (err) {
     next(err);
   }

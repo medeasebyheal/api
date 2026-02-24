@@ -1,8 +1,9 @@
 import mongoose from 'mongoose';
+import { softDelete } from './plugins/softDelete.js';
 
 const promoCodeSchema = new mongoose.Schema(
   {
-    code: { type: String, required: true, trim: true, unique: true, uppercase: true },
+    code: { type: String, required: true, trim: true, uppercase: true },
     discountType: { type: String, enum: ['fixed', 'percent'], required: true },
     discountValue: { type: Number, required: true, min: 0 },
     validFrom: { type: Date },
@@ -13,5 +14,7 @@ const promoCodeSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+promoCodeSchema.index({ code: 1 }, { unique: true, partialFilterExpression: { deleted: { $ne: true } } });
+softDelete(promoCodeSchema);
 
 export const PromoCode = mongoose.model('PromoCode', promoCodeSchema);

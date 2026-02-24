@@ -34,6 +34,10 @@ In the Vercel project: **Settings → Environment Variables**. Add the same vari
 
 Point the frontend API base URL to your Vercel backend, e.g. `https://<project-name>.vercel.app`.
 
+## Data migration: One Shot Lectures (topic → subject)
+
+If you had existing One Shot Lecture documents when moving this feature from topic-level to subject-level, run a one-time migration: for each `OneShotLecture` document that has `topic` set, load the topic, set `subject` to `topic.subject`, then save (and remove `topic` once the schema no longer has it). New documents use `subject` only.
+
 ## Notes
 
 - The Express app runs as a single serverless function; all routes are handled by it.

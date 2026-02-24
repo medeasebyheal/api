@@ -1,5 +1,5 @@
 /**
- * Parser engine for bulk MCQs with explanations and optional YouTube video links.
+ * Parser engine for bulk MCQs with explanations.
  *
  * Supported formats (blocks separated by blank line or numbered 1. 2. 3.):
  *
@@ -11,7 +11,6 @@
  *   Option D
  *   explanation
  *   Explanation text here...
- *   video: https://youtube.com/watch?v=...
  *
  * Format B (numbered):
  *   1. Question text?
@@ -20,7 +19,6 @@
  *   C) Option C (correct)
  *   D) Option D
  *   Explanation: Your explanation here.
- *   Video: https://youtu.be/...
  *
  * Format C (label-style):
  *   Q. Question text
@@ -43,17 +41,17 @@
  *
  * Rules:
  * - One option must be marked (correct), (c), (right), or ✓ / ✔.
- * - "explanation" / "Explanation:" starts explanation; rest of block or until "video:" is explanation text.
- * - "video:" / "Video:" / "youtube:" line gives videoUrl (optional).
+ * - "explanation" / "Explanation:" starts explanation; rest of block is explanation text.
  * - Minimum: question + at least 2 options + one marked correct.
  */
 
 const OPTION_PREFIX = /^[a-dA-D][\.\)]\s*/;
-const QUESTION_PREFIX = /^(\d+[\.\)]\s*|Q\.?\s*|Question\s*:?\s*)/i;
+// Match: 1. / 1) / Q. / Q1. / Q2. / Question (order so Q1. not consumed as Q only)
+const QUESTION_PREFIX = /^(\d+[\.\)]\s*|Q\d+\.?\s*|Q\.?\s*|Question\s*:?\s*)/i;
 const CORRECT_MARKERS = /\s*\((correct|c|right)\)\s*$/i;
-const CHECKMARK_MARKERS = /\s*[✓✔]\s*$/;  // Unicode checkmark or heavy checkmark
+const CHECKMARK_MARKERS = /\s*[✓✔\u2705]\s*$/;  // ✓ ✔ ✅ (U+2705)
 const EXPLANATION_LABEL = /^(explanation|explanation\s*:)\s*$/im;
-const EXPLANATION_LINE = /^Explanation\s*:?\s*/im;
+const EXPLANATION_LINE = /^Explanation\s*(\([^)]*\))?\s*:?\s*/im;
 const VIDEO_LABEL = /^(video|youtube)\s*:?\s*(https?:\S+)\s*$/im;
 const YOUTUBE_URL = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
 
@@ -77,12 +75,26 @@ function normalizeOption(line) {
 }
 
 function isCorrectMarker(line) {
-  return /\((correct|c|right)\)\s*$/i.test(line) || /\s*[✓✔]\s*$/.test(line);
+  return /\((correct|c|right)\)\s*$/i.test(line) || /\s*[✓✔\u2705]\s*$/.test(line) || /\s*✅\s*$/.test(line);
+}
+
+const BLOCK_BOUNDARY = '\n---BOUNDARY---\n';
+const HAS_OPTION_LINE = /^[a-dA-D][\.\)]\s/m;
+
+/** Split a segment that may contain multiple MCQs (Q1. ... Q2. ... or 1. ... 2. ...) into one block per question. */
+function splitSegmentByQuestionStarts(segment) {
+  const parts = segment.split(/(?=(?:^|\n)\s*(?:Q?\d+[\.\)]\s*))/).map((p) => p.trim()).filter(Boolean);
+  return parts;
+}
+
+/** True if block has at least one option-like line (A. / A) etc.). */
+function hasOptionLine(block) {
+  return HAS_OPTION_LINE.test(block);
 }
 
 /**
  * Split raw text into blocks (one per MCQ).
- * Blocks are separated by double newline or by numbered lines "1. " "2. " "61. " etc.
+ * Blocks are separated by double newline, by numbered lines "1. " "2. " "61. ", or by "⸻" (two-em dash).
  * Normalize so "  61. " or " 62. " mid-line is treated as block start (e.g. "Topic 16: ...  61. Q" -> newline before 61).
  */
 function splitBlocks(text) {
@@ -92,23 +104,40 @@ function splitBlocks(text) {
   // Normalize: ensure question numbers at line start (e.g. "Topic 16: ...  61. Question" -> "... \n61. Question")
   trimmed = trimmed.replace(/\s+(\d+[\.\)]\s+)/g, '\n$1');
 
-  // Numbered blocks: 1. ... 2. ... 61. ... (number at start of line or after newline)
-  const numberedSplit = trimmed.split(/(?:^|\n)\s*(\d+[\.\)]\s*)/).filter(Boolean);
+  // First split by horizontal line character ⸻ (U+2E3B)
+  const withBoundary = trimmed.replace(/\n\s*⸻\s*\n/g, BLOCK_BOUNDARY).replace(/\s*⸻\s*/g, BLOCK_BOUNDARY);
+  const segments = withBoundary.split(BLOCK_BOUNDARY).map((s) => s.trim()).filter(Boolean);
+
+  if (segments.length > 1) {
+    const blocks = [];
+    for (const segment of segments) {
+      const subBlocks = splitSegmentByQuestionStarts(segment);
+      for (const b of subBlocks) {
+        if (hasOptionLine(b)) blocks.push(b);
+      }
+    }
+    if (blocks.length > 0) return blocks;
+  }
+
+  // Single segment (no ⸻): apply existing logic
+  const singleSegment = segments.length === 1 ? segments[0] : trimmed;
+
+  // Numbered blocks: 1. ... 2. ... 61. ... or Q1. ... Q2. ...
+  const numberedSplit = singleSegment.split(/(?:^|\n)\s*((?:Q?\d+)[\.\)]\s*)/).filter(Boolean);
   if (numberedSplit.length > 1) {
     const blocks = [];
-    // First segment may be topic header (e.g. "Topic 16: Oogenesis..."); skip until we see "61. " etc.
     for (let i = 1; i < numberedSplit.length; i += 2) {
       const num = numberedSplit[i];
       const rest = (numberedSplit[i + 1] || '').trim();
       const block = (num + rest).trim();
       if (block.length < 10) continue;
-      blocks.push(block);
+      if (hasOptionLine(block)) blocks.push(block);
     }
     if (blocks.length > 0) return blocks;
   }
 
   // Fallback: double-newline blocks
-  return trimmed.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  return singleSegment.split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean).filter(hasOptionLine);
 }
 
 /**
@@ -128,7 +157,7 @@ function splitBlockIntoLines(block) {
 }
 
 /**
- * Parse a single block into { question, options, correctIndex, explanation, videoUrl }.
+ * Parse a single block into { question, options, correctIndex, explanation }.
  */
 function parseBlock(block, blockIndex) {
   const lines = splitBlockIntoLines(block);
@@ -140,10 +169,9 @@ function parseBlock(block, blockIndex) {
   let question = lines[0].replace(QUESTION_PREFIX, '').trim() || lines[0];
   let start = 1;
 
-  // Collect option lines (typically next 4 lines; stop at "explanation" / "Explanation:" / "video")
+  // Collect option lines (typically next 4 lines; stop at "explanation" / "Explanation:" / "video" line)
   const optionLines = [];
   let explanationStart = -1;
-  let videoUrl = null;
 
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
@@ -151,25 +179,17 @@ function parseBlock(block, blockIndex) {
       explanationStart = i + 1;
       break;
     }
-    if (/^Explanation\s*:?\s*/i.test(line)) {
+    if (/^Explanation\s*(\([^)]*\))?\s*:?\s*/i.test(line)) {
       explanationStart = i;
       break;
     }
-    const video = extractYouTubeUrl(line);
-    if (video) {
-      videoUrl = video;
-      continue;
-    }
-    if (/^(video|youtube)\s*:/i.test(line)) {
-      videoUrl = extractYouTubeUrl(line) || line.replace(/^(video|youtube)\s*:?\s*/i, '').trim();
-      continue;
-    }
+    if (extractYouTubeUrl(line) || /^(video|youtube)\s*:/i.test(line)) continue;
     if (optionLines.length < 6) optionLines.push(line);
   }
 
-  // If we found "Explanation:" on a line, explanation starts from that line (rest of line + next lines)
+  // If we found "Explanation:" / "Explanation (source):" on a line, explanation starts from that line (rest of line + next lines)
   if (explanationStart === -1) {
-    const explIdx = lines.findIndex((l, idx) => idx >= 1 && /^Explanation\s*:?\s*/i.test(l));
+    const explIdx = lines.findIndex((l, idx) => idx >= 1 && /^Explanation\s*(\([^)]*\))?\s*:?\s*/i.test(l));
     if (explIdx !== -1) {
       explanationStart = explIdx;
     }
@@ -218,7 +238,7 @@ function parseBlock(block, blockIndex) {
       const ln = lines[j];
       if (extractYouTubeUrl(ln)) continue;
       if (/^(video|youtube)\s*:/i.test(ln)) continue;
-      explLines.push(ln.replace(/^Explanation\s*:?\s*/i, ''));
+      explLines.push(ln.replace(/^Explanation\s*(\([^)]*\))?\s*:?\s*/i, ''));
     }
     explanation = explLines.join(' ').trim();
     // Strip trailing next-question bleed: ".62." or ".62. Oogenesis..." or " 62. O..."
@@ -232,7 +252,6 @@ function parseBlock(block, blockIndex) {
     options: finalOptions,
     correctIndex,
     explanation,
-    videoUrl: videoUrl || undefined,
     partial,
   };
 }
@@ -259,7 +278,6 @@ export function parseBulkMcqs(text) {
       options: parsed.options,
       correctIndex: parsed.correctIndex,
       explanation: parsed.explanation || '',
-      videoUrl: parsed.videoUrl || '',
     });
   }
 
