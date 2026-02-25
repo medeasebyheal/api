@@ -4,6 +4,7 @@ import { Subject } from '../models/Subject.js';
 import { Topic } from '../models/Topic.js';
 import { TopicResource } from '../models/TopicResource.js';
 import { OneShotLecture } from '../models/OneShotLecture.js';
+import { Ospe } from '../models/Ospe.js';
 import { User } from '../models/User.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { canAccessTopic, canAccessTopicWithFreeTrial, canAccessModule } from '../utils/access.js';
@@ -180,6 +181,18 @@ export const listSubjectOneShotLectures = async (req, res, next) => {
   try {
     const lectures = await OneShotLecture.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
     res.json(lectures);
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** Public list of OSPEs for a module (id, name, description only) */
+export const listModuleOspesPublic = async (req, res, next) => {
+  try {
+    const ospes = await Ospe.find({ module: req.params.moduleId })
+      .select('_id name description')
+      .sort({ createdAt: 1 });
+    res.json(ospes);
   } catch (err) {
     next(err);
   }

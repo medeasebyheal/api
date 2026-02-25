@@ -13,6 +13,7 @@ import {
   getTopic,
   listTopicResources,
   listSubjectOneShotLectures,
+  listModuleOspesPublic,
   checkTopicAccess,
   checkModuleAccess,
 } from '../controllers/contentController.js';
@@ -41,6 +42,7 @@ router.get('/subjects/:subjectId/topics', listTopics);
 router.get('/subjects/:subjectId/one-shot-lectures', listSubjectOneShotLectures);
 router.get('/topics/:id', optionalAuth, getTopic);
 router.get('/topics/:topicId/resources', listTopicResources);
+router.get('/modules/:moduleId/ospes', listModuleOspesPublic);
 router.get('/topics/:id/access', auth, checkTopicAccess);
 router.get('/modules/:moduleId/access', auth, checkModuleAccess);
 
