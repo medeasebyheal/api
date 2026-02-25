@@ -23,6 +23,7 @@ router.post('/upload-image', upload.single('image'), async (req, res, next) => {
 });
 
 router.get('/dashboard', admin.dashboardStats);
+router.get('/gemini-usage', admin.getGeminiUsage);
 
 router.get('/programs', admin.listPrograms);
 router.post('/programs', admin.createProgram);
@@ -59,6 +60,7 @@ router.put('/topics/:topicId/mcqs/:mcqId', admin.updateMcq);
 router.delete('/topics/:topicId/mcqs/:mcqId', admin.deleteMcq);
 router.post('/topics/:topicId/mcqs/parse', parseMcqRateLimiter, admin.parseBulkMcqsPreview);
 router.post('/topics/:topicId/mcqs/bulk', admin.bulkCreateMcqs);
+router.post('/mcqs/remove-fifth-option', admin.removeFifthOptionFromMcqs);
 
 router.get('/subjects/:subjectId/one-shot-lectures', admin.listOneShotLectures);
 router.post('/subjects/:subjectId/one-shot-lectures', admin.createOneShotLecture);

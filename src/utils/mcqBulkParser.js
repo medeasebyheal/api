@@ -52,6 +52,8 @@ const CORRECT_MARKERS = /\s*\((correct|c|right)\)\s*$/i;
 const CHECKMARK_MARKERS = /\s*[✓✔\u2705]\s*$/;  // ✓ ✔ ✅ (U+2705)
 const EXPLANATION_LABEL = /^(explanation|explanation\s*:)\s*$/im;
 const EXPLANATION_LINE = /^Explanation\s*(\([^)]*\))?\s*:?\s*/im;
+// "Correct Answer: C" or "E) Correct Answer: C" — metadata only, not an option
+const CORRECT_ANSWER_LABEL = /^(?:[Ee][\.\)]\s*)?Correct\s+Answer\s*:\s*([A-Da-d])/i;
 const VIDEO_LABEL = /^(video|youtube)\s*:?\s*(https?:\S+)\s*$/im;
 const YOUTUBE_URL = /(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
 
@@ -172,6 +174,7 @@ function parseBlock(block, blockIndex) {
   // Collect option lines (typically next 4 lines; stop at "explanation" / "Explanation:" / "video" line)
   const optionLines = [];
   let explanationStart = -1;
+  let correctAnswerFromLabel = undefined;
 
   for (let i = start; i < lines.length; i++) {
     const line = lines[i];
@@ -184,6 +187,11 @@ function parseBlock(block, blockIndex) {
       break;
     }
     if (extractYouTubeUrl(line) || /^(video|youtube)\s*:/i.test(line)) continue;
+    const correctMatch = line.match(CORRECT_ANSWER_LABEL);
+    if (correctMatch) {
+      correctAnswerFromLabel = 'ABCD'.indexOf(correctMatch[1].toUpperCase());
+      continue;
+    }
     if (optionLines.length < 6) optionLines.push(line);
   }
 
@@ -217,6 +225,9 @@ function parseBlock(block, blockIndex) {
         break;
       }
     }
+  }
+  if (correctIndex === -1 && correctAnswerFromLabel !== undefined) {
+    correctIndex = correctAnswerFromLabel;
   }
 
   // Prefer exactly 4 options: if we have more, take first 4; if less, pad or use as-is (min 2)
@@ -256,9 +267,22 @@ function parseBlock(block, blockIndex) {
   };
 }
 
+const PLACEHOLDER_OPTION = /^(no options parsed|add options in edit|\(no options parsed[^)]*\)|\(add options in edit\))$/i;
+
+function meetsRequiredCriteria(parsed) {
+  if (!parsed.question?.trim()) return false;
+  const opts = parsed.options || [];
+  if (opts.length !== 4) return false;
+  if (opts.some((o) => !o?.trim() || PLACEHOLDER_OPTION.test(String(o).trim()))) return false;
+  if (typeof parsed.correctIndex !== 'number' || parsed.correctIndex < 0 || parsed.correctIndex > 3) return false;
+  if (!opts[parsed.correctIndex]?.trim()) return false;
+  if (!parsed.explanation?.trim()) return false;
+  return true;
+}
+
 /**
  * Parse bulk MCQ text. Returns { mcqs: [...], errors: [...], partialBlockIndices: [...] }.
- * partialBlockIndices: 1-based block numbers that were parsed without options (placeholder options added).
+ * Only MCQs with question, 4 options, valid correct answer, and explanation are included; others are skipped.
  */
 export function parseBulkMcqs(text) {
   const results = [];
@@ -272,7 +296,14 @@ export function parseBulkMcqs(text) {
       errors.push({ blockIndex: i + 1, message: parsed.error });
       continue;
     }
-    if (parsed.partial) partialBlockIndices.push(i + 1);
+    if (!meetsRequiredCriteria(parsed)) {
+      errors.push({
+        blockIndex: i + 1,
+        message: 'Skipped: need question, 4 options, correct answer, and explanation',
+      });
+      if (parsed.partial) partialBlockIndices.push(i + 1);
+      continue;
+    }
     results.push({
       question: parsed.question,
       options: parsed.options,

@@ -15,6 +15,7 @@ import { PromoCode } from '../models/PromoCode.js';
 import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
 import { parseBulkMcqsWithFallback } from '../utils/mcqGeminiParser.js';
+import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageStore.js';
 
 // Programs (with years and modules count)
 export const listPrograms = async (req, res, next) => {
@@ -344,8 +345,9 @@ export const deleteMcq = async (req, res, next) => {
 export const parseBulkMcqsPreview = async (req, res, next) => {
   try {
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source } = await parseBulkMcqsWithFallback(rawText);
-    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source });
+    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    console.log(`[Bulk MCQ preview] Parser: ${source || 'unknown'}, MCQs: ${mcqs?.length ?? 0}, Errors: ${errors?.length ?? 0}${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
   }
@@ -353,7 +355,8 @@ export const parseBulkMcqsPreview = async (req, res, next) => {
 export const bulkCreateMcqs = async (req, res, next) => {
   try {
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = await parseBulkMcqsWithFallback(rawText);
+    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    console.log(`[Bulk MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
       const m = mcqs[i];
@@ -367,7 +370,7 @@ export const bulkCreateMcqs = async (req, res, next) => {
       });
       created.push(doc);
     }
-    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created });
+    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created, source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
   }
@@ -764,8 +767,8 @@ export const parseProffJsmuPaperMcqs = async (req, res, next) => {
     if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
     if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source } = await parseBulkMcqsWithFallback(rawText);
-    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source });
+    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source, usage: usage || null });
   } catch (err) {
     next(err);
   }
@@ -776,7 +779,8 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
     if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
     if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = await parseBulkMcqsWithFallback(rawText);
+    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    console.log(`[Bulk Proff JSMU MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
       const m = mcqs[i];
@@ -792,7 +796,7 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
       });
       created.push(doc);
     }
-    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created });
+    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created, source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
   }
@@ -920,8 +924,8 @@ export const parseProffOtherSubjectMcqs = async (req, res, next) => {
     const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
     if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source } = await parseBulkMcqsWithFallback(rawText);
-    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source });
+    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source, usage: usage || null });
   } catch (err) {
     next(err);
   }
@@ -931,7 +935,8 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
     const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
     if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices } = await parseBulkMcqsWithFallback(rawText);
+    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    console.log(`[Bulk Proff Other MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
       const m = mcqs[i];
@@ -947,7 +952,7 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
       });
       created.push(doc);
     }
-    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created });
+    res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created, source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
   }
@@ -1070,6 +1075,15 @@ export const dashboardStats = async (req, res, next) => {
   }
 };
 
+export const getGeminiUsage = async (req, res, next) => {
+  try {
+    const result = getGeminiUsageFromStore();
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+
 // Admin promo codes
 export const listPromoCodes = async (req, res, next) => {
   try {
@@ -1105,6 +1119,43 @@ export const deletePromoCode = async (req, res, next) => {
     const promo = await PromoCode.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!promo) return res.status(404).json({ message: 'Promo code not found' });
     res.json({ message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** Remove 5th option from all MCQs that have more than 4 options (fix "Correct Answer: C" stored as option E). */
+export const removeFifthOptionFromMcqs = async (req, res, next) => {
+  try {
+    const mcqsWithFiveOrMore = await Mcq.find({
+      $expr: { $gt: [{ $size: '$options' }, 4] },
+    }).lean();
+
+    const total = mcqsWithFiveOrMore.length;
+    if (total === 0) {
+      return res.json({
+        message: 'No MCQs found with more than 4 options.',
+        updated: 0,
+        correctedIndex: 0,
+      });
+    }
+
+    let correctedIndex = 0;
+    for (const doc of mcqsWithFiveOrMore) {
+      const options = Array.isArray(doc.options) ? doc.options.slice(0, 4) : [];
+      let correctIndex = doc.correctIndex;
+      if (correctIndex >= 4) {
+        correctIndex = 3;
+        correctedIndex += 1;
+      }
+      await Mcq.updateOne({ _id: doc._id }, { $set: { options, correctIndex } });
+    }
+
+    res.json({
+      message: `Removed 5th option from ${total} MCQ(s).`,
+      updated: total,
+      correctedIndex,
+    });
   } catch (err) {
     next(err);
   }
