@@ -151,7 +151,7 @@ export const updateProfilePicture = async (req, res, next) => {
  */
 export const createAdmin = async (req, res, next) => {
   try {
-    const existingAdmin = await User.findOne({ role: 'admin' });
+    const existingAdmin = await User.findOne({ role: { $in: ['admin', 'superadmin'] } });
     if (existingAdmin) {
       return res.status(410).json({
         message: 'Super admin already exists. This endpoint can only be used once.',
@@ -176,7 +176,7 @@ export const createAdmin = async (req, res, next) => {
       email,
       password,
       contact: contact || '',
-      role: 'admin',
+      role: 'superadmin',
       isVerified: true,
     });
     const u = await User.findById(user._id).select('-password');

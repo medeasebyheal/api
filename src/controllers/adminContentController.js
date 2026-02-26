@@ -190,12 +190,21 @@ export const listSubjects = async (req, res, next) => {
 };
 export const createSubject = async (req, res, next) => {
   try {
-    const sub = await Subject.create({ ...req.body, module: req.params.moduleId });
+    const { oneShotTitle, youtubeUrl, ...subjectBody } = req.body;
+    const sub = await Subject.create({ ...subjectBody, module: req.params.moduleId });
     const mod = await Module.findById(req.params.moduleId);
     if (mod) {
       mod.subjectIds = mod.subjectIds || [];
       mod.subjectIds.push(sub._id);
       await mod.save();
+    }
+    const hasOneShot = [oneShotTitle, youtubeUrl].every((v) => v != null && String(v).trim() !== '');
+    if (hasOneShot) {
+      await OneShotLecture.create({
+        subject: sub._id,
+        title: String(oneShotTitle).trim(),
+        youtubeUrl: String(youtubeUrl).trim(),
+      });
     }
     res.status(201).json(sub);
   } catch (err) {
@@ -204,8 +213,26 @@ export const createSubject = async (req, res, next) => {
 };
 export const updateSubject = async (req, res, next) => {
   try {
-    const sub = await Subject.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const { oneShotTitle, youtubeUrl, ...subjectBody } = req.body;
+    const sub = await Subject.findByIdAndUpdate(req.params.id, subjectBody, { new: true });
     if (!sub) return res.status(404).json({ message: 'Subject not found' });
+    if (oneShotTitle != null || youtubeUrl != null) {
+      const title = String(oneShotTitle ?? '').trim() || 'One Shot Lecture';
+      const url = String(youtubeUrl ?? '').trim();
+      const existing = await OneShotLecture.findOne({ subject: sub._id });
+      if (existing) {
+        await OneShotLecture.findByIdAndUpdate(existing._id, {
+          title: title || existing.title,
+          youtubeUrl: url || existing.youtubeUrl,
+        });
+      } else if (url) {
+        await OneShotLecture.create({
+          subject: sub._id,
+          title,
+          youtubeUrl: url,
+        });
+      }
+    }
     res.json(sub);
   } catch (err) {
     next(err);
@@ -1029,10 +1056,11 @@ export const deletePackage = async (req, res, next) => {
   }
 };
 
-// Dashboard stats + recent users & payments
+// Dashboard stats + recent users & payments (revenue/payment data only for superadmin)
 export const dashboardStats = async (req, res, next) => {
   try {
     const notDeleted = { deleted: { $ne: true } };
+    const isSuperAdmin = req.user?.role === 'superadmin';
     const [
       userCount,
       pendingPayments,
@@ -1045,30 +1073,32 @@ export const dashboardStats = async (req, res, next) => {
       recentPayments,
     ] = await Promise.all([
       User.countDocuments({ role: 'student', ...notDeleted }),
-      Payment.countDocuments({ status: 'pending' }),
+      isSuperAdmin ? Payment.countDocuments({ status: 'pending' }) : 0,
       Program.countDocuments(notDeleted),
       Year.countDocuments(notDeleted),
       Module.countDocuments(notDeleted),
       Topic.countDocuments(notDeleted),
       Mcq.countDocuments(notDeleted),
       User.find({ role: 'student' }).select('name email isVerified').sort({ createdAt: -1 }).limit(5).lean(),
-      Payment.find()
-        .populate('user', 'name email')
-        .populate('package', 'name')
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .lean(),
+      isSuperAdmin
+        ? Payment.find()
+            .populate('user', 'name email')
+            .populate('package', 'name')
+            .sort({ createdAt: -1 })
+            .limit(8)
+            .lean()
+        : [],
     ]);
     res.json({
       userCount,
-      pendingPayments,
+      pendingPayments: isSuperAdmin ? pendingPayments : 0,
       programCount,
       yearCount,
       moduleCount,
       topicCount,
       mcqCount,
       recentUsers,
-      recentPayments,
+      recentPayments: isSuperAdmin ? recentPayments : [],
     });
   } catch (err) {
     next(err);
@@ -1156,6 +1186,71 @@ export const removeFifthOptionFromMcqs = async (req, res, next) => {
       updated: total,
       correctedIndex,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// ——— Super admin only: list admins, create admin, reset password ———
+export const listAdmins = async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const admins = await User.find({ role: { $in: ['admin', 'superadmin'] }, deleted: { $ne: true } })
+      .select('-password')
+      .sort({ createdAt: -1 })
+      .lean();
+    res.json(admins);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const createAdminUser = async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const { name, email, password } = req.body;
+    if (!email || !password || String(password).length < 6) {
+      return res.status(400).json({ message: 'Email and password (min 6 characters) required' });
+    }
+    const existing = await User.findOne({ email: String(email).toLowerCase().trim() });
+    if (existing) {
+      return res.status(400).json({ message: 'Email already registered' });
+    }
+    const user = await User.create({
+      name: (name || email.split('@')[0] || 'Admin').trim(),
+      email: String(email).toLowerCase().trim(),
+      password: String(password),
+      role: 'admin',
+      isVerified: true,
+    });
+    const u = await User.findById(user._id).select('-password').lean();
+    res.status(201).json(u);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resetAdminPassword = async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+    const { newPassword } = req.body;
+    if (!newPassword || String(newPassword).length < 6) {
+      return res.status(400).json({ message: 'newPassword required (min 6 characters)' });
+    }
+    const target = await User.findById(req.params.id);
+    if (!target) return res.status(404).json({ message: 'User not found' });
+    if (target.role !== 'admin' && target.role !== 'superadmin') {
+      return res.status(400).json({ message: 'Can only reset password for admins' });
+    }
+    target.password = String(newPassword);
+    await target.save();
+    res.json({ message: 'Password updated' });
   } catch (err) {
     next(err);
   }

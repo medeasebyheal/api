@@ -25,7 +25,9 @@ export const auth = async (req, res, next) => {
 
 export const requireRole = (...roles) => (req, res, next) => {
   if (!req.user) return res.status(401).json({ message: 'Authentication required' });
-  if (!roles.includes(req.user.role)) {
+  const role = req.user.role;
+  const allowed = roles.includes(role) || (roles.includes('admin') && role === 'superadmin');
+  if (!allowed) {
     return res.status(403).json({ message: 'Access denied' });
   }
   next();

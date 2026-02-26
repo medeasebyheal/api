@@ -1,3 +1,4 @@
+
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import { softDelete } from './plugins/softDelete.js';
@@ -8,7 +9,7 @@ const userSchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
     contact: { type: String, trim: true },
-    role: { type: String, enum: ['student', 'admin'], default: 'student' },
+    role: { type: String, enum: ['student', 'admin', 'superadmin'], default: 'student' },
     isVerified: { type: Boolean, default: false },
     freeTrialUsed: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', default: null },
     activePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', default: null },

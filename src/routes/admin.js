@@ -25,6 +25,10 @@ router.post('/upload-image', upload.single('image'), async (req, res, next) => {
 router.get('/dashboard', admin.dashboardStats);
 router.get('/gemini-usage', admin.getGeminiUsage);
 
+router.get('/admins', requireRole('superadmin'), admin.listAdmins);
+router.post('/admins', requireRole('superadmin'), admin.createAdminUser);
+router.patch('/admins/:id/reset-password', requireRole('superadmin'), admin.resetAdminPassword);
+
 router.get('/programs', admin.listPrograms);
 router.post('/programs', admin.createProgram);
 router.put('/programs/:id', admin.updateProgram);

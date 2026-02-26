@@ -119,6 +119,7 @@ export const getTopic = async (req, res, next) => {
       topic: {
         _id: topic._id,
         name: topic.name,
+        imageUrl: topic.imageUrl,
         videoUrl: topic.videoUrl,
         content: hasAccess ? topic.content : undefined,
         subject: topic.subject,

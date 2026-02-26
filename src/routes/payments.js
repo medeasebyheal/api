@@ -30,7 +30,7 @@ router.get('/', auth, list);
 router.patch(
   '/:id/verify',
   auth,
-  requireRole('admin'),
+  requireRole('superadmin'),
   verify
 );
 

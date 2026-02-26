@@ -83,7 +83,10 @@ export const create = async (req, res, next) => {
 
 export const list = async (req, res, next) => {
   try {
-    const filter = req.user.role === 'admin' ? {} : { user: req.user._id };
+    if (req.user.role === 'admin') {
+      return res.status(403).json({ message: 'Access denied. Revenue and payments are only available to super admin.' });
+    }
+    const filter = req.user.role === 'superadmin' ? {} : { user: req.user._id };
     const payments = await Payment.find(filter)
       .populate('user', 'name email')
       .populate('package')
