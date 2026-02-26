@@ -16,6 +16,7 @@ import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
 import { parseBulkMcqsWithFallback } from '../utils/mcqGeminiParser.js';
 import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageStore.js';
+import { getEaseGPTUsage } from '../utils/easegptUsageStore.js';
 
 // Programs (with years and modules count)
 export const listPrograms = async (req, res, next) => {
@@ -1107,8 +1108,12 @@ export const dashboardStats = async (req, res, next) => {
 
 export const getGeminiUsage = async (req, res, next) => {
   try {
+    if (req.user?.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Only superadmin can view API usage' });
+    }
     const result = getGeminiUsageFromStore();
-    res.json(result);
+    const easegpt = getEaseGPTUsage();
+    res.json({ ...result, easegpt });
   } catch (err) {
     next(err);
   }
