@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { auth } from '../middleware/auth.js';
+import { publicApiLimiter } from '../middleware/publicRateLimit.js';
 import { User } from '../models/User.js';
 import {
   listProff,
@@ -19,6 +20,8 @@ import {
 } from '../controllers/contentController.js';
 
 const router = Router();
+
+router.use(publicApiLimiter);
 
 async function optionalAuth(req, res, next) {
   const authHeader = req.headers.authorization;

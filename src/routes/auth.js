@@ -2,6 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { auth } from '../middleware/auth.js';
+import { authApiLimiter } from '../middleware/publicRateLimit.js';
 import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture } from '../controllers/authController.js';
 
 const router = Router();
@@ -17,6 +18,7 @@ const validate = (req, res, next) => {
 
 router.post(
   '/register',
+  authApiLimiter,
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
@@ -28,6 +30,7 @@ router.post(
 
 router.post(
   '/verify-otp',
+  authApiLimiter,
   [
     body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
     body('otp').trim().notEmpty().withMessage('OTP is required'),
@@ -40,6 +43,7 @@ router.post(
 
 router.post(
   '/login',
+  authApiLimiter,
   [
     body('email').isEmail().normalizeEmail(),
     body('password').notEmpty(),
