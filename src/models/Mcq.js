@@ -10,6 +10,7 @@ const mcqSchema = new mongoose.Schema(
     explanation: { type: String, default: '' },
     type: { type: String, enum: ['text', 'image', 'guess_until_correct'], default: 'text' },
     imageUrl: { type: String, trim: true },
+  imageDescription: { type: String, trim: true },
   },
   { timestamps: true }
 );
