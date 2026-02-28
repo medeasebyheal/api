@@ -12,15 +12,37 @@ export const apply = async (req, res, next) => {
     const pkg = await Package.findById(packageId);
     if (!pkg) return res.status(404).json({ message: 'Package not found' });
 
-    if (isHalfPackage(pkg) && pkg.year != null) {
-      const existing = await UserPackage.findOne({
+    // If package has a year defined, ensure it doesn't violate rules with existing active packages.
+    if (pkg.year != null) {
+      const existingPackages = await UserPackage.find({
         user: req.user._id,
         status: 'active',
       }).populate('package');
-      if (existing?.package && isHalfPackage(existing.package) && existing.package.year === pkg.year) {
-        return res.status(400).json({
-          message: 'You can only have one half-package per year at a time. Complete or wait for current package before applying for another half.',
-        });
+
+      for (const ex of existingPackages) {
+        if (!ex?.package) continue;
+        const existingType = ex.package.type;
+        const existingYear = ex.package.year;
+
+        // Only consider packages for the same year
+        if (existingYear !== pkg.year) continue;
+
+        // Duplicate exact package (same type & year)
+        if (existingType === pkg.type) {
+          return res.status(400).json({ message: 'You already have this package active.' });
+        }
+
+        // If user already has a full-year for this year, block any new purchase for same year
+        if (existingType === 'year_full') {
+          return res.status(400).json({ message: 'You already have a full-year package for this year.' });
+        }
+
+        // If user has a half package and is trying to buy full-year for same year, block upgrade/switch
+        if ((existingType === 'year_half_part1' || existingType === 'year_half_part2') && pkg.type === 'year_full') {
+          return res.status(400).json({ message: 'Cannot switch/upgrade to full-year while a half-year package is active.' });
+        }
+
+        // Otherwise (existing is a half and new is the other half) => allow
       }
     }
 

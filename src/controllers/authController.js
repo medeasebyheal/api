@@ -83,6 +83,9 @@ export const login = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
+    if (user.isBlocked) {
+      return res.status(401).json({ message: 'Account blocked' });
+    }
     const match = await user.comparePassword(password);
     if (!match) {
       return res.status(401).json({ message: 'Invalid email or password' });

@@ -78,3 +78,23 @@ export const remove = async (req, res, next) => {
     next(err);
   }
 };
+
+export const block = async (req, res, next) => {
+  try {
+    const u = await User.findByIdAndUpdate(req.params.id, { isBlocked: true }, { new: true }).select('-password');
+    if (!u) return res.status(404).json({ message: 'User not found' });
+    res.json(u);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const unblock = async (req, res, next) => {
+  try {
+    const u = await User.findByIdAndUpdate(req.params.id, { isBlocked: false }, { new: true }).select('-password');
+    if (!u) return res.status(404).json({ message: 'User not found' });
+    res.json(u);
+  } catch (err) {
+    next(err);
+  }
+};

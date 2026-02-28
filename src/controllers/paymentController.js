@@ -24,6 +24,26 @@ export const create = async (req, res, next) => {
     const pkg = await Package.findById(packageId);
     if (!pkg) return res.status(404).json({ message: 'Package not found' });
 
+    // Server-side guard: prevent disallowed purchases based on existing active packages
+    if (pkg.year != null) {
+      const existingPackages = await UserPackage.find({ user: req.user._id, status: 'active' }).populate('package');
+      for (const ex of existingPackages) {
+        if (!ex?.package) continue;
+        const existingType = ex.package.type;
+        const existingYear = ex.package.year;
+        if (existingYear !== pkg.year) continue;
+        if (existingType === pkg.type) {
+          return res.status(400).json({ message: 'You already have this package active.' });
+        }
+        if (existingType === 'year_full') {
+          return res.status(400).json({ message: 'You already have a full-year package for this year.' });
+        }
+        if ((existingType === 'year_half_part1' || existingType === 'year_half_part2') && pkg.type === 'year_full') {
+          return res.status(400).json({ message: 'Cannot switch/upgrade to full-year while a half-year package is active.' });
+        }
+      }
+    }
+
     const originalAmount = Number(amount ?? pkg.price) || 0;
     let finalAmount = originalAmount;
     let appliedPromoId = null;
@@ -115,19 +135,39 @@ export const verify = async (req, res, next) => {
     await payment.save();
 
     if (status === 'approved') {
+      // Server-side guard: ensure approving this payment won't violate package rules
+      const pkg = payment.package;
+      if (pkg?.year != null) {
+        const existingPackages = await UserPackage.find({ user: payment.user._id, status: 'active' }).populate('package');
+        for (const ex of existingPackages) {
+          if (!ex?.package) continue;
+          const existingType = ex.package.type;
+          const existingYear = ex.package.year;
+          if (existingYear !== pkg.year) continue;
+          if (existingType === pkg.type) {
+            return res.status(400).json({ message: 'User already has this package active.' });
+          }
+          if (existingType === 'year_full') {
+            return res.status(400).json({ message: 'User already has a full-year package for this year.' });
+          }
+          if ((existingType === 'year_half_part1' || existingType === 'year_half_part2') && pkg.type === 'year_full') {
+            return res.status(400).json({ message: 'Cannot switch/upgrade to full-year while a half-year package is active for this user.' });
+          }
+        }
+      }
       await UserPackage.create({
         user: payment.user._id,
         package: payment.package._id,
         status: 'active',
         approvedAt: new Date(),
       });
-      const pkg = await Package.findById(payment.package._id).populate('plan');
-      let plan = pkg?.plan;
-      if (!plan && pkg) {
-        if (pkg.type === 'master_proff') {
+      const paymentPkg = await Package.findById(payment.package._id).populate('plan');
+      let plan = paymentPkg?.plan;
+      if (!plan && paymentPkg) {
+        if (paymentPkg.type === 'master_proff') {
           plan = await Plan.findOne({ planKey: 'master-proff' });
         } else {
-          plan = await Plan.findOne({ year: pkg.year, part: pkg.part, type: pkg.type });
+          plan = await Plan.findOne({ year: paymentPkg.year, part: paymentPkg.part, type: paymentPkg.type });
         }
       }
       const user = await User.findById(payment.user._id);
