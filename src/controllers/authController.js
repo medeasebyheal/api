@@ -6,9 +6,12 @@ import { Plan } from '../models/Plan.js';
 import { OtpVerification } from '../models/OtpVerification.js';
 import { sendRegistrationConfirmation, sendOtpVerification } from '../utils/email.js';
 import { uploadToCloudinary } from '../config/cloudinary.js';
+import { Session } from '../models/Session.js';
+import { PasswordResetToken } from '../models/PasswordResetToken.js';
+import { sendPasswordResetEmail } from '../utils/email.js';
 
-const signToken = (userId) =>
-  jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
+const signToken = (userId, sid) =>
+  jwt.sign(sid ? { userId, sid } : { userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
 
 function generateOtp(length = 6) {
   const digits = '0123456789';
@@ -64,7 +67,13 @@ export const verifyOtp = async (req, res, next) => {
     }
     await OtpVerification.deleteOne({ _id: record._id });
     await sendRegistrationConfirmation(email, name).catch(() => {});
-    const token = signToken(user._id);
+    // create a session for the newly registered student
+    const session = await Session.create({
+      user: user._id,
+      userAgent: req.headers['user-agent'] || '',
+      ip: req.ip,
+    });
+    const token = signToken(user._id, session._id);
     const u = await User.findById(user._id).select('-password');
     res.status(201).json({
       token,
@@ -90,15 +99,79 @@ export const login = async (req, res, next) => {
     if (!match) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
-    const token = signToken(user._id);
-    const packages = await UserPackage.find({ user: user._id, status: 'active' })
-      .populate('package');
+    // For students, invalidate previous sessions so only one device remains active
+    if (user.role === 'student') {
+      await Session.updateMany({ user: user._id }, { valid: false }).catch(() => {});
+    }
+    const session = await Session.create({
+      user: user._id,
+      userAgent: req.headers['user-agent'] || '',
+      ip: req.ip,
+    });
+    const token = signToken(user._id, session._id);
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
     const u = await User.findById(user._id).select('-password');
     res.json({
       token,
       user: { ...u.toObject(), packages },
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const logout = async (req, res, next) => {
+  try {
+    const sid = req.session?._id || (req.user && req.user.currentSid);
+    if (sid) {
+      await Session.findByIdAndUpdate(sid, { valid: false }).catch(() => {});
+    }
+    res.json({ message: 'Logged out' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: 'Email is required' });
+    const user = await User.findOne({ email });
+    if (!user) {
+      // respond with success to avoid exposing registered emails
+      return res.json({ message: 'If this email exists, a password reset link has been sent' });
+    }
+    // generate token
+    const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const expiresAt = new Date(Date.now() + (Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60) * 60 * 1000));
+    await PasswordResetToken.create({ user: user._id, tokenHash, expiresAt });
+    await sendPasswordResetEmail(user.email, token, user.name).catch((err) => console.warn('sendPasswordResetEmail failed', err));
+    res.json({ message: 'If this email exists, a password reset link has been sent' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const resetPassword = async (req, res, next) => {
+  try {
+    const { token, email, password } = req.body;
+    if (!token || !email || !password) return res.status(400).json({ message: 'Token, email and new password are required' });
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const record = await PasswordResetToken.findOne({ tokenHash, used: false, expiresAt: { $gt: new Date() } }).populate('user');
+    if (!record || !record.user || String(record.user.email).toLowerCase() !== String(email).toLowerCase()) {
+      return res.status(400).json({ message: 'Invalid or expired token' });
+    }
+    const user = await User.findById(record.user._id).select('+password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    user.password = password;
+    await user.save();
+    record.used = true;
+    await record.save();
+    // invalidate all sessions for this user
+    await Session.updateMany({ user: user._id }, { valid: false }).catch(() => {});
+    res.json({ message: 'Password reset successful' });
   } catch (err) {
     next(err);
   }

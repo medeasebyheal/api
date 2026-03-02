@@ -191,3 +191,21 @@ export async function sendAccountVerified(email, name) {
     `),
   });
 }
+
+export async function sendPasswordResetEmail(email, token, name) {
+  const safeName = escapeHtml(name || '');
+  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+  return sendEmail({
+    to: email,
+    subject: 'MEDEASE – Reset your password',
+    text: `Hi ${name || ''}, reset your password using this link: ${resetUrl}`,
+    html: wrapEmailHtml(`
+      <p class="greeting">Hi ${safeName || 'there'},</p>
+      <p class="body-text">We received a request to reset your password. Click the button below to reset it. This link is valid for ${process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60} minutes.</p>
+      <div style="text-align:center; margin: 24px 0;">
+        <a href="${resetUrl}" style="display:inline-block padding:12px 20px; border-radius:8px; background:linear-gradient(135deg,#0d9488,#0f766e); color:white; text-decoration:none; font-weight:600;">Reset password</a>
+      </div>
+      <p class="body-text">If you didn't request a password reset, you can safely ignore this email.</p>
+    `),
+  });
+}

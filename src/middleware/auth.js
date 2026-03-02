@@ -1,5 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User.js';
+import { Session } from '../models/Session.js';
 
 export const auth = async (req, res, next) => {
   try {
@@ -16,7 +17,20 @@ export const auth = async (req, res, next) => {
     if (user.isBlocked) {
       return res.status(401).json({ message: 'Account blocked' });
     }
+
+    // Ensure session is valid (single-device enforcement for students)
+    if (!decoded.sid) {
+      return res.status(401).json({ message: 'Session identifier missing' });
+    }
+    const session = await Session.findById(decoded.sid).catch(() => null);
+    if (!session || !session.valid || String(session.user) !== String(decoded.userId)) {
+      return res.status(401).json({ message: 'Session invalid' });
+    }
+    // update lastSeen timestamp
+    session.lastSeen = new Date();
+    await session.save().catch(() => {});
     req.user = user;
+    req.session = session;
     next();
   } catch (err) {
     if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {

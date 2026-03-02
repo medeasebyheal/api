@@ -3,7 +3,7 @@ import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { auth } from '../middleware/auth.js';
 import { authApiLimiter } from '../middleware/publicRateLimit.js';
-import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture } from '../controllers/authController.js';
+import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture, logout, forgotPassword, resetPassword } from '../controllers/authController.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
@@ -60,6 +60,17 @@ router.patch(
   upload.single('avatar'),
   updateProfilePicture
 );
+
+router.post('/logout', auth, logout);
+router.post('/forgot-password', authApiLimiter, [
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+], validate, forgotPassword);
+
+router.post('/reset-password', [
+  body('token').trim().notEmpty().withMessage('Token is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+], validate, resetPassword);
 
 router.post(
   '/create-admin',
