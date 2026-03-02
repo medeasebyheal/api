@@ -23,6 +23,8 @@ const allowedOrigins = [
   process.env.CLIENT_URL || 'http://localhost:5173',
   'https://medease-api-qa.vercel.app',
   'https://medease-qa.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:5174'
 ].filter(Boolean);
 app.use(cors({
   origin: (origin, cb) => {
