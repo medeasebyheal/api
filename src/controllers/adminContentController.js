@@ -373,7 +373,18 @@ export const deleteMcq = async (req, res, next) => {
 export const parseBulkMcqsPreview = async (req, res, next) => {
   try {
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    let mcqs, errors, partialBlockIndices, source, usage;
+    try {
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+    } catch (err) {
+      if (err.isGeminiExhausted) {
+        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+      }
+      if (err.isGeminiMissing) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
     console.log(`[Bulk MCQ preview] Parser: ${source || 'unknown'}, MCQs: ${mcqs?.length ?? 0}, Errors: ${errors?.length ?? 0}${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source: source || null, usage: usage || null });
   } catch (err) {
@@ -383,7 +394,18 @@ export const parseBulkMcqsPreview = async (req, res, next) => {
 export const bulkCreateMcqs = async (req, res, next) => {
   try {
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    let mcqs, errors, partialBlockIndices, source, usage;
+    try {
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+    } catch (err) {
+      if (err.isGeminiExhausted) {
+        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+      }
+      if (err.isGeminiMissing) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
     console.log(`[Bulk MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
@@ -795,7 +817,18 @@ export const parseProffJsmuPaperMcqs = async (req, res, next) => {
     if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
     if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    let mcqs, errors, partialBlockIndices, source, usage;
+    try {
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+    } catch (err) {
+      if (err.isGeminiExhausted) {
+        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+      }
+      if (err.isGeminiMissing) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
     res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source, usage: usage || null });
   } catch (err) {
     next(err);
@@ -807,7 +840,18 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
     if (!year || !paper) return res.status(404).json({ message: 'Year or paper not found' });
     if (paper.type !== 'mcq') return res.status(400).json({ message: 'Paper is not an MCQ paper' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    let mcqs, errors, partialBlockIndices, source, usage;
+    try {
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+    } catch (err) {
+      if (err.isGeminiExhausted) {
+        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+      }
+      if (err.isGeminiMissing) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
     console.log(`[Bulk Proff JSMU MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {
@@ -952,7 +996,18 @@ export const parseProffOtherSubjectMcqs = async (req, res, next) => {
     const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
     if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    let mcqs, errors, partialBlockIndices, source, usage;
+    try {
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+    } catch (err) {
+      if (err.isGeminiExhausted) {
+        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+      }
+      if (err.isGeminiMissing) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
     res.json({ mcqs, errors, partialBlockIndices: partialBlockIndices || [], source, usage: usage || null });
   } catch (err) {
     next(err);
@@ -963,7 +1018,18 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
     const { year, subject } = await getOtherYearAndSubject(req.params.yearId, req.params.subjectId);
     if (!year || !subject) return res.status(404).json({ message: 'Year or subject not found' });
     const rawText = req.body.text || req.body.raw || '';
-    const { mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText);
+    let mcqs, errors, partialBlockIndices, source, usage;
+    try {
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+    } catch (err) {
+      if (err.isGeminiExhausted) {
+        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+      }
+      if (err.isGeminiMissing) {
+        return res.status(400).json({ message: err.message });
+      }
+      throw err;
+    }
     console.log(`[Bulk Proff Other MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
     for (let i = 0; i < mcqs.length; i++) {

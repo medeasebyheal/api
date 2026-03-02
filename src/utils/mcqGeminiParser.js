@@ -5,8 +5,7 @@
  */
 
 import { GoogleGenAI } from '@google/genai';
-import { parseBulkMcqs } from './mcqBulkParser.js';
-import { recordGeminiUsage } from './geminiUsageStore.js';
+import { recordGeminiUsage, getGeminiUsage } from './geminiUsageStore.js';
 
 const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 
@@ -43,8 +42,8 @@ Each MCQ object must follow this schema:
 Parsing Rules:
 
 1. Question
-- Starts with a number prefix like "8.", "Q1.", etc.
-- Remove the prefix.
+- Starts with a number prefix like "8.", "8)", "Q1.", "Q1)", etc.
+- Remove the prefix. If the prefix uses a closing parenthesis (e.g. "1)" or "Q1)"), strip the trailing \")\" so it is not included in the question text.
 - Include only the question text.
 - Do NOT include options or explanation in this field.
 
@@ -68,7 +67,7 @@ Parsing Rules:
 - If missing, use "".
 
 5. Boundaries
-- A new line starting with a number + period starts a new MCQ.
+- A new line starting with a number + period or number + parenthesis starts a new MCQ.
 - Keep explanations strictly attached to the preceding question.
 
 6. If no valid MCQs are found, return [].
@@ -229,8 +228,9 @@ async function parseWithKey(apiKey, text, keyIndex) {
 export async function parseBulkMcqsWithGemini(text) {
   const keys = getGeminiApiKeys();
   if (keys.length === 0) {
-    console.log('[Bulk MCQ parse] Gemini skipped: no API keys configured (GEMINI_API_KEY, etc.)');
-    return null;
+    const e = new Error('Gemini skipped: no API keys configured (GEMINI_API_KEY, etc.)');
+    e.isGeminiMissing = true;
+    throw e;
   }
   if (!text?.trim()) {
     console.log('[Bulk MCQ parse] Gemini skipped: empty input text');
@@ -256,9 +256,31 @@ export async function parseBulkMcqsWithGemini(text) {
       console.warn('[Bulk MCQ parse] Gemini failed (retry key):', err?.message || err);
     }
   }
-
-  console.log('[Bulk MCQ parse] Gemini failed after all keys; falling back to manual parser. Last error:', lastError?.message || lastError);
-  return null;
+  // All keys failed. Determine whether keys are exhausted or just errors.
+  console.log('[Bulk MCQ parse] Gemini failed after all keys. Last error:', lastError?.message || lastError);
+  const usage = getGeminiUsage();
+  const allExhausted = usage.keys.length > 0 && usage.keys.every((k) => k.exhausted);
+  if (allExhausted) {
+    // Decide nearest reset time: if any key hit daily limit (RPD) then reset at next UTC midnight,
+    // otherwise (RPM/TPM) the per-minute limit will clear in ~60s.
+    const reasons = new Set(usage.keys.flatMap((k) => k.exhaustedReasons || []));
+    const ONE_MINUTE_MS = 60 * 1000;
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    function startOfTodayUTC() {
+      const d = new Date();
+      return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+    }
+    let resetAt = Date.now() + ONE_MINUTE_MS;
+    if (reasons.has('RPD')) {
+      resetAt = startOfTodayUTC() + ONE_DAY_MS;
+    }
+    const err = new Error('All Gemini API keys appear exhausted. Try again after limits reset.');
+    err.isGeminiExhausted = true;
+    err.resetAt = new Date(resetAt).toISOString();
+    throw err;
+  }
+  // Not an exhaustion case; propagate last error.
+  throw lastError || new Error('Gemini parse failed');
 }
 
 /**
@@ -267,12 +289,8 @@ export async function parseBulkMcqsWithGemini(text) {
  * @returns {Promise<{ mcqs, errors, partialBlockIndices, source: 'gemini' | 'manual' }>}
  */
 export async function parseBulkMcqsWithFallback(text) {
+  // No fallback: always try Gemini and propagate errors to caller.
   const geminiResult = await parseBulkMcqsWithGemini(text);
-  if (geminiResult) {
-    console.log('[Bulk MCQ parse] Using Gemini parser');
-    return { ...geminiResult, source: 'gemini' };
-  }
-  console.log('[Bulk MCQ parse] Using custom (rule-based) parser');
-  const manual = parseBulkMcqs(text || '');
-  return { ...manual, source: 'manual' };
+  console.log('[Bulk MCQ parse] Using Gemini parser');
+  return { ...geminiResult, source: 'gemini' };
 }
