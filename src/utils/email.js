@@ -194,7 +194,7 @@ export async function sendAccountVerified(email, name) {
 
 export async function sendPasswordResetEmail(email, token, name) {
   const safeName = escapeHtml(name || '');
-  const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+  const resetUrl = `${process.env.CLIENT_URL || 'http://localhost:5173'}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
   return sendEmail({
     to: email,
     subject: 'MEDEASE – Reset your password',
