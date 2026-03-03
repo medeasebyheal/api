@@ -8,6 +8,7 @@ import { Ospe } from '../models/Ospe.js';
 import { User } from '../models/User.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { canAccessTopic, canAccessTopicWithFreeTrial, canAccessModule } from '../utils/access.js';
+import { makeEtagFromString, maxUpdatedAtIso } from '../utils/etag.js';
 
 export const listProff = async (req, res, next) => {
   try {
@@ -20,8 +21,40 @@ export const listProff = async (req, res, next) => {
 
 export const listYears = async (req, res, next) => {
   try {
-    const years = await Year.find().sort({ createdAt: 1 });
+    const years = await Year.find().sort({ createdAt: 1 }).select('_id name').lean();
     res.json(years);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listYearsWithModules = async (req, res, next) => {
+  try {
+    console.time('listYearsWithModules');
+    const years = await Year.find().sort({ createdAt: 1 }).select('_id name updatedAt').lean();
+    const yearIds = years.map((y) => y._id);
+    const modules = await Module.find({ year: { $in: yearIds } })
+      .select('_id name description imageUrl year updatedAt')
+      .sort({ createdAt: 1 })
+      .lean();
+    const modulesByYear = {};
+    modules.forEach((m) => {
+      const y = String(m.year);
+      if (!modulesByYear[y]) modulesByYear[y] = [];
+      modulesByYear[y].push(m);
+    });
+    const result = years.map((y) => ({ ...y, modules: modulesByYear[String(y._id)] || [] }));
+    // compute ETag based on max updatedAt across years and modules
+    const maxUpdated = maxUpdatedAtIso([...years, ...modules]);
+    const etag = makeEtagFromString(`${req.path}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) {
+      console.timeEnd('listYearsWithModules');
+      return res.status(304).end();
+    }
+    console.timeEnd('listYearsWithModules');
+    res.json(result);
   } catch (err) {
     next(err);
   }
@@ -31,7 +64,13 @@ export const listModules = async (req, res, next) => {
   try {
     const modules = await Module.find({ year: req.params.yearId })
       .sort({ createdAt: 1 })
-      .populate('subjectIds');
+      .select('_id name description imageUrl year updatedAt')
+      .lean();
+    const maxUpdated = maxUpdatedAtIso(modules);
+    const etag = makeEtagFromString(`${req.path}:${req.params.yearId}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(modules);
   } catch (err) {
     next(err);
@@ -40,8 +79,12 @@ export const listModules = async (req, res, next) => {
 
 export const getModule = async (req, res, next) => {
   try {
-    const mod = await Module.findById(req.params.moduleId).populate('year', 'name');
+    const mod = await Module.findById(req.params.moduleId).select('_id name description imageUrl year updatedAt').lean();
     if (!mod) return res.status(404).json({ message: 'Module not found' });
+    const etag = makeEtagFromString(`${req.path}:${req.params.moduleId}:${maxUpdatedAtIso([mod])}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(mod);
   } catch (err) {
     next(err);
@@ -52,7 +95,13 @@ export const listSubjects = async (req, res, next) => {
   try {
     const subjects = await Subject.find({ module: req.params.moduleId })
       .sort({ createdAt: 1 })
-      .populate('topicIds');
+      .select('_id name imageUrl module updatedAt')
+      .lean();
+    const maxUpdated = maxUpdatedAtIso(subjects);
+    const etag = makeEtagFromString(`${req.path}:${req.params.moduleId}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(subjects);
   } catch (err) {
     next(err);
@@ -61,8 +110,12 @@ export const listSubjects = async (req, res, next) => {
 
 export const getSubject = async (req, res, next) => {
   try {
-    const sub = await Subject.findById(req.params.subjectId).populate('module', 'name');
+    const sub = await Subject.findById(req.params.subjectId).select('_id name imageUrl module updatedAt').lean();
     if (!sub) return res.status(404).json({ message: 'Subject not found' });
+    const etag = makeEtagFromString(`${req.path}:${req.params.subjectId}:${maxUpdatedAtIso([sub])}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(sub);
   } catch (err) {
     next(err);
@@ -71,8 +124,21 @@ export const getSubject = async (req, res, next) => {
 
 export const listTopics = async (req, res, next) => {
   try {
-    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
-    res.json(topics);
+    const page = Math.max(1, parseInt(req.query.page || '1', 10));
+    const limit = Math.max(10, Math.min(100, parseInt(req.query.limit || '20', 10)));
+    const skip = (page - 1) * limit;
+    const topics = await Topic.find({ subject: req.params.subjectId })
+      .sort({ createdAt: 1 })
+      .skip(skip)
+      .limit(limit)
+      .select('_id name imageUrl createdAt')
+      .lean();
+    const maxUpdated = maxUpdatedAtIso(topics);
+    const etag = makeEtagFromString(`${req.path}:${req.params.subjectId}:p${page}:l${limit}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    res.json({ topics, page, limit });
   } catch (err) {
     next(err);
   }
@@ -81,7 +147,7 @@ export const listTopics = async (req, res, next) => {
 export const getTopic = async (req, res, next) => {
   try {
     const topic = await Topic.findById(req.params.id)
-      .populate({ path: 'subject', populate: { path: 'module', select: 'name' } });
+      .populate({ path: 'subject', populate: { path: 'module', select: 'name' } }).lean();
     if (!topic) return res.status(404).json({ message: 'Topic not found' });
 
     const includeMcqs = req.query.includeMcqs === 'true';
@@ -134,7 +200,13 @@ export const getTopic = async (req, res, next) => {
       const mcqs = await Mcq.find({ topic: topic._id }).sort({ createdAt: 1 });
       response.mcqs = mcqs;
     }
-
+    // compute ETag based on topic updatedAt and whether mcqs included
+    const itemUpdated = topic.updatedAt || topic.createdAt || '';
+    const etagInput = `${req.path}:${req.params.id}:mcqs=${includeMcqs}:${itemUpdated}`;
+    const etag = makeEtagFromString(etagInput);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(response);
   } catch (err) {
     next(err);

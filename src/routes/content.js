@@ -6,6 +6,7 @@ import { User } from '../models/User.js';
 import {
   listProff,
   listYears,
+  listYearsWithModules,
   listModules,
   getModule,
   listSubjects,
@@ -37,6 +38,7 @@ async function optionalAuth(req, res, next) {
 
 router.get('/proff', listProff);
 router.get('/years', listYears);
+router.get('/years-with-modules', listYearsWithModules);
 router.get('/years/:yearId/modules', listModules);
 router.get('/modules/:moduleId', getModule);
 router.get('/modules/:moduleId/subjects', listSubjects);

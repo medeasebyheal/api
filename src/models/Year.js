@@ -10,4 +10,7 @@ const yearSchema = new mongoose.Schema(
 );
 softDelete(yearSchema);
 
+// index for sorting/faster retrieval
+yearSchema.index({ createdAt: 1 });
+
 export const Year = mongoose.model('Year', yearSchema);

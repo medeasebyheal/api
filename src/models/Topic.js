@@ -13,4 +13,8 @@ const topicSchema = new mongoose.Schema(
 );
 softDelete(topicSchema);
 
+// indexes
+topicSchema.index({ subject: 1 });
+topicSchema.index({ createdAt: 1 });
+
 export const Topic = mongoose.model('Topic', topicSchema);
