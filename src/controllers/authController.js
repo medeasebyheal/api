@@ -9,6 +9,7 @@ import { uploadToCloudinary } from '../config/cloudinary.js';
 import { Session } from '../models/Session.js';
 import { PasswordResetToken } from '../models/PasswordResetToken.js';
 import { sendPasswordResetEmail } from '../utils/email.js';
+import { makeEtagFromString, maxUpdatedAtIso } from '../utils/etag.js';
 
 const signToken = (userId, sid) =>
   jwt.sign(sid ? { userId, sid } : { userId }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '7d' });
@@ -184,7 +185,13 @@ export const me = async (req, res, next) => {
   try {
     const packages = await UserPackage.find({ user: req.user._id, status: 'active' })
       .populate('package');
-    res.json({ user: { ...req.user.toObject(), packages } });
+    const userObj = { ...req.user.toObject(), packages };
+    const maxUpdated = maxUpdatedAtIso([req.user, ...(packages || []).map((p) => p.package || p)]);
+    const etag = makeEtagFromString(`${String(req.user._id)}:${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
+    res.json({ user: userObj });
   } catch (err) {
     next(err);
   }

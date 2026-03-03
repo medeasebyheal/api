@@ -7,6 +7,7 @@ import { Mcq } from '../models/Mcq.js';
 import { OneShotLecture } from '../models/OneShotLecture.js';
 import { TopicResource } from '../models/TopicResource.js';
 import { Ospe } from '../models/Ospe.js';
+import { makeEtagFromString, maxUpdatedAtIso } from '../utils/etag.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { ProffMcq } from '../models/ProffMcq.js';
 import { ProffOspe } from '../models/ProffOspe.js';
@@ -45,6 +46,11 @@ export const listPrograms = async (req, res, next) => {
       },
       { $project: { years: 0, modCount: 0 } },
     ]);
+    const maxUpdated = maxUpdatedAtIso(programs);
+    const etag = makeEtagFromString(`${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(programs);
   } catch (err) {
     next(err);
@@ -97,10 +103,24 @@ export const listYears = async (req, res, next) => {
         { $addFields: { program: '$programDoc' } },
         { $project: { programDoc: 0 } },
       ]);
-      return res.json(years);
+      {
+        const maxUpdated = maxUpdatedAtIso(years);
+        const etag = makeEtagFromString(`${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}`);
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'public, max-age=60');
+        if (req.headers['if-none-match'] === etag) return res.status(304).end();
+        return res.json(years);
+      }
     }
     const years = await Year.find(filter).sort({ createdAt: 1 }).populate('program', 'name').lean();
-    res.json(years);
+    {
+      const maxUpdated = maxUpdatedAtIso(years);
+      const etag = makeEtagFromString(`${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}`);
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
+      res.json(years);
+    }
   } catch (err) {
     next(err);
   }
@@ -136,7 +156,14 @@ export const deleteYear = async (req, res, next) => {
 export const listModules = async (req, res, next) => {
   try {
     const modules = await Module.find({ year: req.params.yearId }).sort({ createdAt: 1 });
-    res.json(modules);
+    {
+      const maxUpdated = maxUpdatedAtIso(modules);
+      const etag = makeEtagFromString(`${req.path}:${req.params.yearId}:${maxUpdated}`);
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
+      res.json(modules);
+    }
   } catch (err) {
     next(err);
   }
@@ -174,7 +201,14 @@ export const listAllModules = async (req, res, next) => {
       .populate('year', 'name')
       .populate('subjectIds', 'name')
       .lean();
-    res.json(modules);
+    {
+      const maxUpdated = maxUpdatedAtIso(modules);
+      const etag = makeEtagFromString(`${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}`);
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
+      res.json(modules);
+    }
   } catch (err) {
     next(err);
   }
@@ -184,7 +218,14 @@ export const listAllModules = async (req, res, next) => {
 export const listSubjects = async (req, res, next) => {
   try {
     const subjects = await Subject.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
-    res.json(subjects);
+    {
+      const maxUpdated = maxUpdatedAtIso(subjects);
+      const etag = makeEtagFromString(`${req.path}:${req.params.moduleId}:${maxUpdated}`);
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
+      res.json(subjects);
+    }
   } catch (err) {
     next(err);
   }
@@ -256,7 +297,15 @@ export const listAllSubjects = async (req, res, next) => {
     const subjects = await Subject.find()
       .sort({ createdAt: 1 })
       .populate({ path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } });
-    res.json(subjects);
+    {
+      const subs = subjects.map((s) => (s.toObject ? s.toObject() : s));
+      const maxUpdated = maxUpdatedAtIso(subs);
+      const etag = makeEtagFromString(`${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}`);
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
+      res.json(subjects);
+    }
   } catch (err) {
     next(err);
   }
@@ -266,7 +315,14 @@ export const listAllSubjects = async (req, res, next) => {
 export const listTopics = async (req, res, next) => {
   try {
     const topics = await Topic.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
-    res.json(topics);
+    {
+      const maxUpdated = maxUpdatedAtIso(topics);
+      const etag = makeEtagFromString(`${req.path}:${req.params.subjectId}:${maxUpdated}`);
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=60');
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
+      res.json(topics);
+    }
   } catch (err) {
     next(err);
   }

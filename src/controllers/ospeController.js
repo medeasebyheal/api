@@ -1,6 +1,7 @@
 import { Ospe } from '../models/Ospe.js';
 import { OspeAttempt } from '../models/OspeAttempt.js';
 import { canAccessModule } from '../utils/access.js';
+import { makeEtagFromString, maxUpdatedAtIso } from '../utils/etag.js';
 
 /** Flatten stations or legacy questions into a single list for answer indexing */
 function getFlatQuestions(ospe) {
@@ -17,7 +18,12 @@ export const listByModule = async (req, res, next) => {
     if (!access.allowed) {
       return res.status(403).json({ message: 'Access denied to this module' });
     }
-    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
+    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ createdAt: 1 }).lean();
+    const maxUpdated = maxUpdatedAtIso(ospes);
+    const etag = makeEtagFromString(`${req.path}:${req.params.moduleId}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(ospes);
   } catch (err) {
     next(err);
@@ -38,6 +44,11 @@ export const getOne = async (req, res, next) => {
         questions: [{ ...q, imageUrl: undefined }],
       }));
     }
+    const maxUpdated = maxUpdatedAtIso([doc]);
+    const etag = makeEtagFromString(`${req.path}:${req.params.id}:${maxUpdated}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(doc);
   } catch (err) {
     next(err);

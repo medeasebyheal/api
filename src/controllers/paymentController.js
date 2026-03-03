@@ -5,6 +5,7 @@ import { User } from '../models/User.js';
 import { Package } from '../models/Package.js';
 import { Plan } from '../models/Plan.js';
 import { sendPaymentApproved, sendPaymentRejected, sendAccountVerified, sendPaymentReceived } from '../utils/email.js';
+import { makeEtagFromString, maxUpdatedAtIso } from '../utils/etag.js';
 
 export const create = async (req, res, next) => {
   try {
@@ -110,7 +111,13 @@ export const list = async (req, res, next) => {
     const payments = await Payment.find(filter)
       .populate('user', 'name email')
       .populate('package')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+    const maxUpdated = maxUpdatedAtIso(payments);
+    const etag = makeEtagFromString(`${req.path}:${JSON.stringify(req.query || {})}:${maxUpdated}:${req.user?._id || ''}`);
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=60');
+    if (req.headers['if-none-match'] === etag) return res.status(304).end();
     res.json(payments);
   } catch (err) {
     next(err);
