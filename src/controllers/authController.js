@@ -147,8 +147,11 @@ export const forgotPassword = async (req, res, next) => {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const expiresAt = new Date(Date.now() + (Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES || 60) * 60 * 1000));
     await PasswordResetToken.create({ user: user._id, tokenHash, expiresAt });
-    await sendPasswordResetEmail(user.email, token, user.name).catch((err) => console.warn('sendPasswordResetEmail failed', err));
-    res.json({ message: 'If this email exists, a password reset link has been sent' });
+    const sendResult = await sendPasswordResetEmail(user.email, token, user.name).catch((err) => {
+      console.warn('sendPasswordResetEmail failed', err);
+      return { sent: false, error: err?.message || 'send failed' };
+    });
+    res.json({ message: 'If this email exists, a password reset link has been sent', sent: Boolean(sendResult?.sent) });
   } catch (err) {
     next(err);
   }
