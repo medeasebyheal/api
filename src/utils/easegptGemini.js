@@ -110,7 +110,7 @@ User: ${msg}`;
         },
       });
       recordEaseGPTUsage(response?.usageMetadata);
-      recordGeminiUsage(i, response?.usageMetadata);
+      recordGeminiUsage(i, response?.usageMetadata, { source: 'easegpt' });
       const text = response?.text;
       if (typeof text === 'string' && text.trim()) return text.trim();
       lastError = new Error('Empty response');
@@ -255,7 +255,7 @@ Student: ${msg}`;
         },
       });
       recordEaseGPTUsage(response?.usageMetadata);
-      recordGeminiUsage(i, response?.usageMetadata);
+      recordGeminiUsage(i, response?.usageMetadata, { source: 'easegpt' });
       const text = response?.text;
       if (typeof text === 'string' && text.trim()) return text.trim();
       lastError = new Error('Empty response');

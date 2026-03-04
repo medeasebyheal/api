@@ -18,6 +18,7 @@ import { Payment } from '../models/Payment.js';
 import { parseBulkMcqsWithFallback } from '../utils/mcqGeminiParser.js';
 import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageStore.js';
 import { getEaseGPTUsage } from '../utils/easegptUsageStore.js';
+import { GeminiUsageLog } from '../models/GeminiUsageLog.js';
 
 // Programs (with years and modules count)
 export const listPrograms = async (req, res, next) => {
@@ -1236,6 +1237,118 @@ export const getGeminiUsage = async (req, res, next) => {
     const result = getGeminiUsageFromStore();
     const easegpt = getEaseGPTUsage();
     res.json({ ...result, easegpt });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getGeminiUsageLogs = async (req, res, next) => {
+  try {
+    if (req.user?.role !== 'superadmin') {
+      return res.status(403).json({ message: 'Only superadmin can view API usage logs' });
+    }
+    const dateStr = String(req.query.date || '').trim();
+    const now = new Date();
+    let year, month, day;
+    if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      [year, month, day] = dateStr.split('-').map((n) => Number(n));
+    } else {
+      year = now.getUTCFullYear();
+      month = now.getUTCMonth() + 1;
+      day = now.getUTCDate();
+    }
+    const dayStart = Date.UTC(year, month - 1, day);
+    const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+    // Pagination params
+    const page = Math.max(1, parseInt(req.query.page || '1', 10) || 1);
+    const limit = Math.max(1, Math.min(1000, parseInt(req.query.limit || '200', 10) || 200));
+
+    const filter = { timestamp: { $gte: new Date(dayStart), $lt: new Date(dayEnd) } };
+
+    const totalEntries = await GeminiUsageLog.countDocuments(filter);
+    const totalPages = Math.max(1, Math.ceil(totalEntries / limit));
+
+    // Return most recent first
+    const entries = await GeminiUsageLog.find(filter).sort({ timestamp: -1 }).skip((page - 1) * limit).limit(limit).lean();
+
+    // Summary aggregation across the whole day (not just the page)
+    const agg = await GeminiUsageLog.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: '$keyIndex',
+          requests: { $sum: 1 },
+          tokens: { $sum: { $ifNull: ['$tokens', 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Per-minute (last 60s) aggregation for RPM/TPM
+    const minuteStart = new Date(Date.now() - 60 * 1000);
+    const minuteAgg = await GeminiUsageLog.aggregate([
+      { $match: { timestamp: { $gte: minuteStart, $lt: new Date(dayEnd) } } },
+      {
+        $group: {
+          _id: '$keyIndex',
+          rpm: { $sum: 1 },
+          tpm: { $sum: { $ifNull: ['$tokens', 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const minuteMap = Object.fromEntries(minuteAgg.map((a) => [a._id, { rpm: a.rpm || 0, tpm: a.tpm || 0 }]));
+
+    const RPM_LIMIT = 10;
+    const TPM_LIMIT = 250000;
+    const RPD_LIMIT = 20;
+
+    const keys = agg.map((a) => {
+      const ki = a._id;
+      const requests = a.requests || 0;
+      const tokens = a.tokens || 0;
+      const { rpm = 0, tpm = 0 } = minuteMap[ki] || {};
+      const exhaustedReasons = [];
+      if (rpm >= RPM_LIMIT) exhaustedReasons.push('RPM');
+      if (tpm >= TPM_LIMIT) exhaustedReasons.push('TPM');
+      if (requests >= RPD_LIMIT) exhaustedReasons.push('RPD');
+      return {
+        keyIndex: ki,
+        label: `Key ${ki + 1}`,
+        rpm,
+        tpm,
+        rpd: requests,
+        tokens,
+        limits: { rpm: RPM_LIMIT, tpm: TPM_LIMIT, rpd: RPD_LIMIT },
+        exhausted: exhaustedReasons.length > 0,
+        exhaustedReasons,
+      };
+    });
+
+    const totals = keys.reduce(
+      (s, k) => {
+        s.requests += k.rpd || 0;
+        s.tokens += k.tokens || 0;
+        return s;
+      },
+      { requests: 0, tokens: 0 }
+    );
+
+    res.json({
+      date: new Date(dayStart).toISOString().slice(0, 10),
+      page,
+      limit,
+      totalEntries,
+      totalPages,
+      entries: entries.map((e) => ({
+        timestamp: e.timestamp ? e.timestamp.toISOString() : new Date(e.timestamp).toISOString(),
+        keyIndex: e.keyIndex,
+        tokens: e.tokens || 0,
+        meta: e.meta || {},
+      })),
+      summary: { keys, totals },
+    });
   } catch (err) {
     next(err);
   }

@@ -124,7 +124,7 @@ async function parseWithKey(apiKey, text, keyIndex) {
     : null;
 
   if (typeof keyIndex === 'number') {
-    recordGeminiUsage(keyIndex, usageMetadata || { totalTokenCount: 0 });
+    recordGeminiUsage(keyIndex, usageMetadata || { totalTokenCount: 0 }, { source: 'mcq-parser' });
   }
 
   let jsonStr = raw.trim();

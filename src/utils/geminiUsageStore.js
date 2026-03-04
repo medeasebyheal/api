@@ -26,12 +26,38 @@ function trimOld() {
  * Record one Gemini API call for a key.
  * @param {number} keyIndex - 0, 1, or 2
  * @param {{ totalTokenCount?: number } | null} usageMetadata - from response.usageMetadata
+ * @param {object} [meta] - additional metadata to store (e.g., { source: 'easegpt' })
  */
-export function recordGeminiUsage(keyIndex, usageMetadata) {
+export function recordGeminiUsage(keyIndex, usageMetadata, meta = {}) {
   const timestamp = Date.now();
   const tokens = usageMetadata?.totalTokenCount ?? 0;
-  entries.push({ keyIndex: Math.max(0, Math.min(2, keyIndex)), timestamp, tokens });
+  // keep meta in-memory as well for richer introspection if needed
+  entries.push({ keyIndex: Math.max(0, Math.min(2, keyIndex)), timestamp, tokens, meta });
   trimOld();
+
+  // Persist to MongoDB asynchronously (non-blocking).
+  // Dynamic import so this module doesn't require DB during startup.
+  (async () => {
+    try {
+      const mod = await import('../models/GeminiUsageLog.js');
+      const GeminiUsageLog = mod.GeminiUsageLog || mod.default;
+      if (GeminiUsageLog && typeof GeminiUsageLog.create === 'function') {
+        GeminiUsageLog.create({
+          keyIndex: Math.max(0, Math.min(2, keyIndex)),
+          tokens,
+          timestamp: new Date(timestamp),
+          meta: meta || {},
+        }).catch((err) => {
+          // Don't throw — just log and continue
+          // eslint-disable-next-line no-console
+          console.warn('[GeminiUsageLog] failed to write log', err && err.message ? err.message : err);
+        });
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[GeminiUsageLog] import failed', err && err.message ? err.message : err);
+    }
+  })();
 }
 
 /**
