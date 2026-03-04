@@ -19,14 +19,7 @@ function getGeminiApiKeys() {
 
 let keyRoundRobinIndex = 0;
 
-/** Returns next API key in round-robin order and its index (0, 1, 2) for usage tracking. */
-function getNextApiKey() {
-  const keys = getGeminiApiKeys();
-  if (keys.length === 0) return null;
-  const idx = keyRoundRobinIndex % keys.length;
-  keyRoundRobinIndex += 1;
-  return { apiKey: keys[idx], keyIndex: idx };
-}
+// keyRoundRobinIndex is reserved for round-robin selection if needed.
 
 function is429QuotaError(err) {
   return err?.status === 429 || err?.code === 429 || String(err?.message || '').includes('429') || String(err?.message || '').includes('RESOURCE_EXHAUSTED') || String(err?.message || '').includes('quota');
@@ -97,7 +90,11 @@ ${conversation ? `Previous conversation:\n${conversation}` : ''}
 User: ${msg}`;
 
   let lastError = null;
-  for (let i = 0; i < keys.length; i++) {
+  // Round-robin start index so consecutive calls use different first keys
+  const startIdx = keyRoundRobinIndex % keys.length;
+  keyRoundRobinIndex = (keyRoundRobinIndex + 1) % Number.MAX_SAFE_INTEGER;
+  for (let offset = 0; offset < keys.length; offset++) {
+    const i = (startIdx + offset) % keys.length;
     const apiKey = keys[i];
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -117,7 +114,7 @@ User: ${msg}`;
     } catch (err) {
       lastError = err;
       if (is429QuotaError(err)) {
-        if (i < keys.length - 1) continue;
+        if (offset < keys.length - 1) continue;
         const e = new Error('All API keys have exceeded their quota. Please try again in a few minutes.');
         e.status = 429;
         throw e;
@@ -242,7 +239,11 @@ ${conversation ? `Previous conversation:\n${conversation}` : ''}
 Student: ${msg}`;
 
   let lastError = null;
-  for (let i = 0; i < keys.length; i++) {
+  // Round-robin start index so consecutive calls use different first keys
+  const startIdx = keyRoundRobinIndex % keys.length;
+  keyRoundRobinIndex = (keyRoundRobinIndex + 1) % Number.MAX_SAFE_INTEGER;
+  for (let offset = 0; offset < keys.length; offset++) {
+    const i = (startIdx + offset) % keys.length;
     const apiKey = keys[i];
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -251,7 +252,7 @@ Student: ${msg}`;
         contents: fullPrompt,
         config: {
           maxOutputTokens: 1024,
-          temperature: 0.3,
+          temperature: 0.1,
         },
       });
       recordEaseGPTUsage(response?.usageMetadata);
@@ -262,7 +263,7 @@ Student: ${msg}`;
     } catch (err) {
       lastError = err;
       if (is429QuotaError(err)) {
-        if (i < keys.length - 1) continue;
+        if (offset < keys.length - 1) continue;
         const e = new Error('All API keys have exceeded their quota. Please try again in a few minutes.');
         e.status = 429;
         throw e;
