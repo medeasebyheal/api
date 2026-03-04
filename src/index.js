@@ -42,8 +42,39 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-// Ensure preflight (OPTIONS) requests are handled with CORS headers
+
+// Fallback CORS headers + safe preflight responder.
+// Placed before any routes that might redirect so OPTIONS requests don't get redirected.
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    // allow non-browser clients (curl, server-to-server)
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+  );
+  res.setHeader(
+    'Access-Control-Allow-Methods',
+    'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+  );
+
+  if (req.method === 'OPTIONS') {
+    // Respond to preflight immediately to avoid redirects or other side-effects
+    return res.sendStatus(204);
+  }
+
+  next();
+});
+
+// Ensure preflight (OPTIONS) requests are handled by cors as well
 app.options('*', cors(corsOptions));
+
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
