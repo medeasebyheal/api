@@ -28,13 +28,22 @@ const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174'
 ].filter(Boolean);
-app.use(cors({
+
+const corsOptions = {
   origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    return cb(null, false);
+    // allow requests with no origin (like curl, mobile apps, or server-to-server)
+    if (!origin) return cb(null, true);
+    if (allowedOrigins.includes(origin)) return cb(null, true);
+    // disallow other origins
+    return cb(new Error('Not allowed by CORS'), false);
   },
   credentials: true,
-}));
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+// Ensure preflight (OPTIONS) requests are handled with CORS headers
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
