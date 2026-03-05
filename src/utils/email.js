@@ -113,15 +113,17 @@ export async function sendRegistrationConfirmation(email, name) {
   });
 }
 
-export async function sendPaymentReceived(email, name) {
+export async function sendPaymentReceived(email, name, subscriptionId) {
   const safeName = escapeHtml(name);
+  const safeSub = escapeHtml(subscriptionId);
   return sendEmail({
     to: email,
     subject: 'MEDEASE – Payment received',
-    text: `Hi ${name}, we have received your payment. Your account will be activated after admin verification.`,
+    text: `Hi ${name}, we have received your payment (Subscription ID: ${subscriptionId}). Your account will be activated after admin verification.`,
     html: wrapEmailHtml(`
       <p class="greeting">Hi ${safeName},</p>
       <p class="body-text">We have received your payment.</p>
+      ${safeSub ? `<p class="body-text">Subscription ID: <span class="highlight">${safeSub}</span></p>` : ''}
       <p class="body-text"><span class="status-badge status-pending">Pending verification</span> — Your account will be activated after admin verification. We'll notify you as soon as it's done.</p>
       <div class="divider"></div>
       <p class="body-text">Thank you for choosing MEDEASE.</p>
@@ -129,15 +131,17 @@ export async function sendPaymentReceived(email, name) {
   });
 }
 
-export async function sendPaymentApproved(email, name) {
+export async function sendPaymentApproved(email, name, subscriptionId) {
   const safeName = escapeHtml(name);
+  const safeSub = escapeHtml(subscriptionId);
   return sendEmail({
     to: email,
     subject: 'MEDEASE – Payment approved, access activated',
-    text: `Hi ${name}, your payment has been approved. You now have access to your purchased package.`,
+    text: `Hi ${name}, your payment (Subscription ID: ${subscriptionId}) has been approved. You now have access to your purchased package.`,
     html: wrapEmailHtml(`
       <p class="greeting">Hi ${safeName},</p>
       <p class="body-text"><span class="status-badge status-success">Payment approved</span></p>
+      ${safeSub ? `<p class="body-text">Subscription ID: <span class="highlight">${safeSub}</span></p>` : ''}
       <p class="body-text">Your payment has been approved. You now have full access to your purchased package. Log in to your account to start learning.</p>
       <div class="divider"></div>
       <p class="body-text">Happy studying!</p>

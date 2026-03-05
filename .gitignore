@@ -13,3 +13,4 @@
 /examples
 /src/config/db.js
 .vercel
+.env

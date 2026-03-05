@@ -11,7 +11,7 @@ export const list = async (req, res, next) => {
     if (verified !== undefined) filter.isVerified = verified === 'true';
     const skip = (Number(page) - 1) * Number(limit);
     const [users, total] = await Promise.all([
-      User.find(filter).select('-password updatedAt createdAt').sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      User.find(filter).select('-password -updatedAt -createdAt').sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
       User.countDocuments(filter),
     ]);
     const maxUpdated = maxUpdatedAtIso(users);
@@ -27,7 +27,7 @@ export const list = async (req, res, next) => {
 
 export const getOne = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.id).select('-password updatedAt createdAt').lean();
+    const user = await User.findById(req.params.id).select('-password -updatedAt -createdAt').lean();
     if (!user) return res.status(404).json({ message: 'User not found' });
     const maxUpdated = maxUpdatedAtIso([user]);
     const etag = makeEtagFromString(`${req.path}:${req.params.id}:${maxUpdated}`);

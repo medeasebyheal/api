@@ -79,6 +79,21 @@ export const create = async (req, res, next) => {
           }
         : undefined;
 
+    // generate sequential subscriptionId in format MBH-yyyymmdd-XXXX using Counter collection
+    const pad = (n, len = 4) => String(n).padStart(len, '0');
+    const now = new Date();
+    const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1, 2)}${pad(now.getDate(), 2)}`;
+    const counterKey = `MBH-${ymd}`;
+    // use counter collection to atomically increment
+    const Counter = (await import('../models/Counter.js')).default;
+    const counterDoc = await Counter.findOneAndUpdate(
+      { key: counterKey },
+      { $inc: { seq: 1 } },
+      { upsert: true, new: true }
+    );
+    const seq = counterDoc.seq || 1;
+    const subscriptionId = `MBH-${ymd}-${pad(seq, 4)}`;
+
     const payment = await Payment.create({
       user: req.user._id,
       package: packageId,
@@ -86,6 +101,7 @@ export const create = async (req, res, next) => {
       originalAmount: appliedPromoId ? originalAmount : undefined,
       promoCode: appliedPromoId,
       receiptUrl,
+      subscriptionId,
       status: 'pending',
       ...(academicDetails && { academicDetails }),
     });
@@ -94,7 +110,7 @@ export const create = async (req, res, next) => {
       await PromoCode.findByIdAndUpdate(appliedPromoId, { $inc: { usageCount: 1 } });
     }
 
-    await sendPaymentReceived(req.user.email, req.user.name);
+    await sendPaymentReceived(req.user.email, req.user.name, subscriptionId);
     const populated = await Payment.findById(payment._id).populate('package').populate('promoCode');
     res.status(201).json(populated);
   } catch (err) {
@@ -186,7 +202,7 @@ export const verify = async (req, res, next) => {
         await sendAccountVerified(user.email, user.name);
       }
       await user.save();
-      await sendPaymentApproved(payment.user.email, payment.user.name);
+      await sendPaymentApproved(payment.user.email, payment.user.name, payment.subscriptionId);
     } else {
       await sendPaymentRejected(payment.user.email, payment.user.name, rejectionReason);
     }

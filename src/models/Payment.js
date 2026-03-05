@@ -20,6 +20,7 @@ const paymentSchema = new mongoose.Schema(
       year: { type: Number },
       part: { type: Number },
     },
+    subscriptionId: { type: String, index: { unique: true, sparse: true } },
   },
   { timestamps: true }
 );
