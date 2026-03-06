@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { User } from '../models/User.js';
 import { UserPackage } from '../models/UserPackage.js';
 import { Plan } from '../models/Plan.js';
+import { Package } from '../models/Package.js';
 import { OtpVerification } from '../models/OtpVerification.js';
 import { sendRegistrationConfirmation, sendOtpVerification } from '../utils/email.js';
 import { uploadToCloudinary } from '../config/cloudinary.js';
@@ -60,14 +61,49 @@ export const verifyOtp = async (req, res, next) => {
       await OtpVerification.deleteOne({ _id: record._id });
       return res.status(400).json({ message: 'Verification code has expired' });
     }
-    const user = await User.create({ name, email, password, contact: contact || '', role: 'student' });
-    const freeTrialPlan = await Plan.findOne({ planKey: 'free-trial' });
+    const user = await User.create({ name, email, password, contact: contact || '', role: 'student', isVerified: true });
+    // Try to assign a free-trial package. Projects may use a Plan document or only Package records.
+    const freeTrialPlan = await Plan.findOne({ planKey: 'free-trial' }).catch(() => null);
     if (freeTrialPlan) {
       user.activePlanId = freeTrialPlan._id;
       await user.save();
     }
+
+    // Find a Package to use for the free trial. Try several fallbacks for different schemas:
+    // 1) Package that references the Plan (package.plan === freeTrialPlan._id)
+    // 2) Package with a planKey field (package.planKey === 'free-trial')
+    // 3) Package whose name contains "free trial"
+    try {
+      let freePkg = null;
+      if (freeTrialPlan) {
+        freePkg = await Package.findOne({ plan: freeTrialPlan._id }).catch(() => null);
+      }
+      if (!freePkg) {
+        freePkg = await Package.findOne({ planKey: 'free-trial' }).catch(() => null);
+      }
+      if (!freePkg) {
+        freePkg = await Package.findOne({ name: /free[-\s]?trial/i }).catch(() => null);
+      }
+
+      if (freePkg) {
+        const expiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
+        await UserPackage.create({
+          user: user._id,
+          package: freePkg._id,
+          status: 'active',
+          approvedAt: new Date(),
+          expiresAt,
+        });
+
+        user.activePlanId = freePkg._id;
+        await user.save();
+      }
+    } catch (err) {
+      // do not block registration on failures here
+      console.warn('free-trial assignment failed', err?.message || err);
+    }
     await OtpVerification.deleteOne({ _id: record._id });
-    await sendRegistrationConfirmation(email, name).catch(() => {});
+    await sendRegistrationConfirmation(email, name).catch(() => { });
     // create a session for the newly registered student
     const session = await Session.create({
       user: user._id,
@@ -102,7 +138,7 @@ export const login = async (req, res, next) => {
     }
     // For students, invalidate previous sessions so only one device remains active
     if (user.role === 'student') {
-      await Session.updateMany({ user: user._id }, { valid: false }).catch(() => {});
+      await Session.updateMany({ user: user._id }, { valid: false }).catch(() => { });
     }
     const session = await Session.create({
       user: user._id,
@@ -126,7 +162,7 @@ export const logout = async (req, res, next) => {
   try {
     const sid = req.session?._id || (req.user && req.user.currentSid);
     if (sid) {
-      await Session.findByIdAndUpdate(sid, { valid: false }).catch(() => {});
+      await Session.findByIdAndUpdate(sid, { valid: false }).catch(() => { });
     }
     res.json({ message: 'Logged out' });
   } catch (err) {
@@ -174,7 +210,7 @@ export const resetPassword = async (req, res, next) => {
     record.used = true;
     await record.save();
     // invalidate all sessions for this user
-    await Session.updateMany({ user: user._id }, { valid: false }).catch(() => {});
+    await Session.updateMany({ user: user._id }, { valid: false }).catch(() => { });
     res.json({ message: 'Password reset successful' });
   } catch (err) {
     next(err);

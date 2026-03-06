@@ -14,7 +14,8 @@
     "seed:ospe": "node scripts/seedOspeSample.js",
     "seed:foundation": "node scripts/seedFoundationModule.js",
     "seed:superadmin": "node scripts/seedSuperAdmin.js",
-    "script:remove-fifth-option": "node scripts/removeFifthOptionFromMcqs.js"
+    "script:remove-fifth-option": "node scripts/removeFifthOptionFromMcqs.js",
+    "activate-free-trial": "node scripts/activate-free-trial.js"
   },
   "dependencies": {
     "@google/genai": "^1.42.0",

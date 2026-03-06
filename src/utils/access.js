@@ -4,25 +4,44 @@ import { Topic } from '../models/Topic.js';
 import { Subject } from '../models/Subject.js';
 import { Module } from '../models/Module.js';
 import { Year } from '../models/Year.js';
+import { Plan } from '../models/Plan.js';
+import { Package } from '../models/Package.js';
 
 const isDev = process.env.NODE_ENV === 'development';
 
-/** Resolve the single topic allowed on free trial: 1st topic of 1st subject of 1st module (by createdAt). */
-export async function getFreeTrialTopicId() {
-  const year = await Year.findOne().sort({ createdAt: 1 }).lean();
-  if (!year) return null;
-  const module_ = await Module.findOne({ year: year._id }).sort({ createdAt: 1 }).lean();
-  if (!module_) return null;
-  const subject = await Subject.findOne({ module: module_._id }).sort({ createdAt: 1 }).lean();
-  if (!subject) return null;
-  const topic = await Topic.findOne({ subject: subject._id }).sort({ createdAt: 1 }).lean();
-  return topic?._id ?? null;
+/** Return first-topic IDs (by createdAt) for a single module's subjects. */
+export async function getFirstTopicsForModule(moduleId) {
+  if (!moduleId) return [];
+  const subjects = await Subject.find({ module: moduleId }).sort({ createdAt: 1 }).lean();
+  if (!subjects || subjects.length === 0) return [];
+  const topicIds = [];
+  for (const sub of subjects) {
+    // eslint-disable-next-line no-await-in-loop
+    const topic = await Topic.findOne({ subject: sub._id }).sort({ createdAt: 1 }).lean();
+    if (topic) topicIds.push(topic._id?.toString ? topic._id.toString() : topic._id);
+  }
+  return topicIds;
+}
+
+/** Return deduplicated first-topic IDs for multiple modules. */
+export async function getFirstTopicsForModules(moduleIds) {
+  if (!moduleIds || !moduleIds.length) return [];
+  const unique = Array.from(new Set(moduleIds.map((m) => (m?._id || m).toString())));
+  const all = [];
+  for (const m of unique) {
+    // eslint-disable-next-line no-await-in-loop
+    const ids = await getFirstTopicsForModule(m);
+    if (ids && ids.length) all.push(...ids.map((id) => id.toString()));
+  }
+  return Array.from(new Set(all));
 }
 
 async function canAccessModuleByPlan(userId, moduleId) {
   const user = await User.findById(userId).populate({ path: 'activePlanId' });
   const plan = user?.activePlanId;
   if (!plan) return false;
+  // Do not treat free-trial plans as full-access plans.
+  if (plan.isFreeTrial) return false;
   if (plan.proffPapers && plan.proffPapers.length > 0) {
     return false;
   }
@@ -41,6 +60,13 @@ export async function canAccessTopic(userId, topicId) {
   const userPackages = await UserPackage.find({ user: userId, status: 'active' }).populate('package');
   for (const up of userPackages) {
     const pkg = up.package;
+    // Skip trial packages when deciding full-module access; free-trial packages only grant access
+    // to selected first-topics via canAccessTopicWithFreeTrial.
+    const name = (pkg?.name || '').toString();
+    const planKey = pkg?.planKey || '';
+    const isTrialPkg = /free[-\s]?trial/i.test(name) || String(planKey) === 'free-trial';
+    if (isTrialPkg) continue;
+
     if (pkg?.moduleIds && pkg.moduleIds.some((m) => (m._id || m).toString() === moduleId?.toString())) {
       return { allowed: true };
     }
@@ -50,16 +76,72 @@ export async function canAccessTopic(userId, topicId) {
 
 export async function canAccessTopicWithFreeTrial(user, topicId) {
   if (isDev) return { allowed: true, freeTrial: true };
+  // If user already used freeTrial earlier (legacy flag), allow only that topic
   if (user.freeTrialUsed) {
     return user.freeTrialUsed.toString() === topicId.toString()
       ? { allowed: true, freeTrial: true }
       : { allowed: false, reason: 'Free trial already used for another topic' };
   }
-  const freeTrialTopicId = await getFreeTrialTopicId();
-  if (!freeTrialTopicId) return { allowed: false, reason: 'Free trial topic not available' };
-  if (freeTrialTopicId.toString() !== topicId.toString()) {
-    return { allowed: false, reason: 'Free trial allows only the first topic of the first subject of the first module' };
+
+  // Check for active free-trial UserPackage.
+  // Try to locate a package explicitly tied to planKey 'free-trial', but fall back to any active UserPackage
+  // whose package name or plan indicates a free trial.
+  let activeTrial = null;
+  const now = new Date();
+  const trialQuery = { user: user._id, status: 'active', $or: [{ expiresAt: { $gt: now } }, { expiresAt: { $exists: false } }] };
+
+  const freePlan = await Plan.findOne({ planKey: 'free-trial' }).lean().catch(() => null);
+  try {
+    let freePkg = null;
+    if (freePlan) {
+      freePkg = await Package.findOne({ plan: freePlan._id }).lean().catch(() => null);
+    }
+    if (!freePkg) {
+      freePkg = await Package.findOne({ planKey: 'free-trial' }).lean().catch(() => null);
+    }
+    if (!freePkg) {
+      freePkg = await Package.findOne({ name: /free[-\s]?trial/i }).lean().catch(() => null);
+    }
+
+    if (freePkg) {
+      activeTrial = await UserPackage.findOne({ ...trialQuery, package: freePkg._id }).lean().catch(() => null);
+    }
+  } catch (e) {
+    // ignore
   }
+
+  // Fallback: check any active UserPackage for this user and detect if it's a free trial by package name or planKey
+  if (!activeTrial) {
+    const possible = await UserPackage.findOne(trialQuery).populate('package').lean().catch(() => null);
+    if (possible && possible.package) {
+      const pkg = possible.package;
+      const name = (pkg.name || '').toString();
+      const planKey = pkg.planKey || '';
+      if (/free[-\s]?trial/i.test(name) || String(planKey) === 'free-trial' || (freePlan && String(pkg.plan || '') === String(freePlan._id))) {
+        activeTrial = possible;
+      }
+    }
+  }
+
+  if (!activeTrial) return { allowed: false, reason: 'No active free trial' };
+
+  // Ensure package populated so we can read moduleIds
+  if (!activeTrial.package || !Array.isArray(activeTrial.package.moduleIds)) {
+    const refreshed = await UserPackage.findById(activeTrial._id).populate('package').lean().catch(() => null);
+    if (refreshed) activeTrial = refreshed;
+  }
+
+  // Always use the first module by createdAt across the entire platform
+  let moduleIds = [];
+  const allModules = await Module.find().sort({ createdAt: 1 }).limit(1).lean();
+  if (allModules && allModules.length > 0) {
+    moduleIds = [allModules[0]._id];
+  }
+
+  const allowedIds = await getFirstTopicsForModules(moduleIds);
+  if (!allowedIds || allowedIds.length === 0) return { allowed: false, reason: 'Free trial topic(s) not available' };
+  const allowed = allowedIds.some((id) => id?.toString() === topicId.toString());
+  if (!allowed) return { allowed: false, reason: 'Free trial allows only the first topic of each subject in the package modules' };
   return { allowed: true, freeTrial: true };
 }
 
@@ -70,6 +152,12 @@ export async function canAccessModule(userId, moduleId) {
   const userPackages = await UserPackage.find({ user: userId, status: 'active' }).populate('package');
   for (const up of userPackages) {
     const pkg = up.package;
+    // Skip trial packages when deciding full-module access (e.g. for OSPE)
+    const name = (pkg?.name || '').toString();
+    const planKey = pkg?.planKey || '';
+    const isTrialPkg = /free[-\s]?trial/i.test(name) || String(planKey) === 'free-trial';
+    if (isTrialPkg) continue;
+
     if (pkg?.moduleIds?.some((m) => (m._id || m).toString() === moduleId.toString())) {
       return { allowed: true };
     }

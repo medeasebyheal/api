@@ -117,10 +117,10 @@ async function parseWithKey(apiKey, text, keyIndex) {
   const usageMetadata = response?.usageMetadata;
   const usage = usageMetadata
     ? {
-        promptTokenCount: usageMetadata.promptTokenCount ?? null,
-        outputTokenCount: usageMetadata.candidatesTokenCount ?? null,
-        totalTokenCount: usageMetadata.totalTokenCount ?? null,
-      }
+      promptTokenCount: usageMetadata.promptTokenCount ?? null,
+      outputTokenCount: usageMetadata.candidatesTokenCount ?? null,
+      totalTokenCount: usageMetadata.totalTokenCount ?? null,
+    }
     : null;
 
   if (typeof keyIndex === 'number') {
@@ -258,8 +258,10 @@ export async function parseBulkMcqsWithGemini(text) {
   }
   // All keys failed. Determine whether keys are exhausted or just errors.
   console.log('[Bulk MCQ parse] Gemini failed after all keys. Last error:', lastError?.message || lastError);
+  const activeKeysCount = keys.length;
   const usage = getGeminiUsage();
-  const allExhausted = usage.keys.length > 0 && usage.keys.every((k) => k.exhausted);
+  const activeUsageKeys = usage.keys.slice(0, activeKeysCount);
+  const allExhausted = activeUsageKeys.length > 0 && activeUsageKeys.every((k) => k.exhausted);
   if (allExhausted) {
     // Decide nearest reset time: if any key hit daily limit (RPD) then reset at next UTC midnight,
     // otherwise (RPM/TPM) the per-minute limit will clear in ~60s.

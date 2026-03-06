@@ -6,6 +6,7 @@ const userPackageSchema = new mongoose.Schema(
     package: { type: mongoose.Schema.Types.ObjectId, ref: 'Package', required: true },
     status: { type: String, enum: ['active', 'expired'], default: 'active' },
     approvedAt: { type: Date, required: true },
+    expiresAt: { type: Date },
   },
   { timestamps: true }
 );
