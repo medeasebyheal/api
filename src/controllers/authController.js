@@ -84,6 +84,10 @@ export const verifyOtp = async (req, res, next) => {
       if (!freePkg) {
         freePkg = await Package.findOne({ name: /free[-\s]?trial/i }).catch(() => null);
       }
+      if (!freePkg) {
+        // fallback: packages that encode free in the type field (e.g. 'year_half_part1-free')
+        freePkg = await Package.findOne({ type: /-free$/i }).catch(() => null);
+      }
 
       if (freePkg) {
         const expiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);

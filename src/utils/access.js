@@ -64,7 +64,8 @@ export async function canAccessTopic(userId, topicId) {
     // to selected first-topics via canAccessTopicWithFreeTrial.
     const name = (pkg?.name || '').toString();
     const planKey = pkg?.planKey || '';
-    const isTrialPkg = /free[-\s]?trial/i.test(name) || String(planKey) === 'free-trial';
+    const ptype = (pkg?.type || '').toString();
+    const isTrialPkg = /free[-\s]?trial/i.test(name) || /free/i.test(ptype) || String(planKey) === 'free-trial';
     if (isTrialPkg) continue;
 
     if (pkg?.moduleIds && pkg.moduleIds.some((m) => (m._id || m).toString() === moduleId?.toString())) {
@@ -102,6 +103,10 @@ export async function canAccessTopicWithFreeTrial(user, topicId) {
     if (!freePkg) {
       freePkg = await Package.findOne({ name: /free[-\s]?trial/i }).lean().catch(() => null);
     }
+    if (!freePkg) {
+      // some packages mark free in the type field (e.g. "year_half_part1-free")
+      freePkg = await Package.findOne({ type: /free/i }).lean().catch(() => null);
+    }
 
     if (freePkg) {
       activeTrial = await UserPackage.findOne({ ...trialQuery, package: freePkg._id }).lean().catch(() => null);
@@ -117,7 +122,8 @@ export async function canAccessTopicWithFreeTrial(user, topicId) {
       const pkg = possible.package;
       const name = (pkg.name || '').toString();
       const planKey = pkg.planKey || '';
-      if (/free[-\s]?trial/i.test(name) || String(planKey) === 'free-trial' || (freePlan && String(pkg.plan || '') === String(freePlan._id))) {
+      const ptype = (pkg.type || '').toString();
+      if (/free[-\s]?trial/i.test(name) || /free/i.test(ptype) || String(planKey) === 'free-trial' || (freePlan && String(pkg.plan || '') === String(freePlan._id))) {
         activeTrial = possible;
       }
     }
