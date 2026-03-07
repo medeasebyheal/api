@@ -10,11 +10,11 @@ export const validate = async (req, res, next) => {
     if (!promo) return res.status(404).json({ message: 'Invalid promo code' });
     if (!promo.isActive) return res.status(400).json({ message: 'Promo code is not active' });
 
-    const now = new Date();
-    if (promo.validFrom && now < promo.validFrom) {
+    const now = Date.now();
+    if (promo.validFrom && now < new Date(promo.validFrom).getTime()) {
       return res.status(400).json({ message: 'Promo code is not yet valid' });
     }
-    if (promo.validTo && now > promo.validTo) {
+    if (promo.validTo && now > new Date(promo.validTo).getTime()) {
       return res.status(400).json({ message: 'Promo code has expired' });
     }
     if (promo.usageLimit != null && promo.usageCount >= promo.usageLimit) {

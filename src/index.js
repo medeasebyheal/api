@@ -74,7 +74,7 @@ app.use((req, res, next) => {
 
 // Ensure preflight (OPTIONS) requests are handled by cors as well
 app.options('*', cors(corsOptions));
-
+app.set('etag', false);
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
