@@ -1,5 +1,6 @@
 import { User } from '../models/User.js';
 import { UserPackage } from '../models/UserPackage.js';
+import { Session } from '../models/Session.js';
 
 export const list = async (req, res, next) => {
   try {
@@ -24,7 +25,7 @@ export const list = async (req, res, next) => {
 
     const [users, total] = await Promise.all([
       User.find(filter)
-        .select('-password -updatedAt -createdAt')
+        .select('-password -updatedAt') // include createdAt so frontend can show Joined date
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(Number(limit)),
@@ -46,7 +47,7 @@ export const list = async (req, res, next) => {
 export const getOne = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id)
-      .select('-password -updatedAt -createdAt')
+      .select('-password -updatedAt') // include createdAt for detail view
       .lean();
 
     if (!user) {
@@ -165,6 +166,39 @@ export const unblock = async (req, res, next) => {
 
     res.json(u);
 
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const revokeAccess = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const sessionsResult = await Session.updateMany(
+      { user: user._id, valid: true },
+      { valid: false }
+    ).catch(() => ({ modifiedCount: 0 }));
+
+    const expiredPackagesResult = await UserPackage.updateMany(
+      { user: user._id, status: 'active' },
+      { status: 'expired', expiresAt: new Date() }
+    ).catch(() => ({ modifiedCount: 0 }));
+
+    user.activePlanId = null;
+    await user.save().catch(() => { });
+
+    const u = await User.findById(user._id).select('-password');
+
+    res.json({
+      message: 'Access revoked',
+      user: u,
+      expiredPackagesCount: expiredPackagesResult.modifiedCount ?? expiredPackagesResult.nModified ?? 0,
+      sessionsInvalidatedCount: sessionsResult.modifiedCount ?? sessionsResult.nModified ?? 0,
+    });
   } catch (err) {
     next(err);
   }

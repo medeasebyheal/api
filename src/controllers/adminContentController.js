@@ -14,9 +14,10 @@ import { Package } from '../models/Package.js';
 import { PromoCode } from '../models/PromoCode.js';
 import { User } from '../models/User.js';
 import { Payment } from '../models/Payment.js';
-import { parseBulkMcqsWithFallback } from '../utils/mcqGeminiParser.js';
+import { parseBulkMcqs } from '../utils/mcqGeminiParser.js';
 import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageStore.js';
 import { getEaseGPTUsage } from '../utils/easegptUsageStore.js';
+import { getOpenAIUsage } from '../utils/openaiUsageStore.js';
 import { GeminiUsageLog } from '../models/GeminiUsageLog.js';
 
 // Programs (with years and modules count)
@@ -376,7 +377,7 @@ export const parseBulkMcqsPreview = async (req, res, next) => {
     const rawText = req.body.text || req.body.raw || '';
     let mcqs, errors, partialBlockIndices, source, usage;
     try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
     } catch (err) {
       if (err.isGeminiExhausted) {
         return res.status(429).json({ message: err.message, resetAt: err.resetAt });
@@ -397,7 +398,7 @@ export const bulkCreateMcqs = async (req, res, next) => {
     const rawText = req.body.text || req.body.raw || '';
     let mcqs, errors, partialBlockIndices, source, usage;
     try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
     } catch (err) {
       if (err.isGeminiExhausted) {
         return res.status(429).json({ message: err.message, resetAt: err.resetAt });
@@ -820,7 +821,7 @@ export const parseProffJsmuPaperMcqs = async (req, res, next) => {
     const rawText = req.body.text || req.body.raw || '';
     let mcqs, errors, partialBlockIndices, source, usage;
     try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
     } catch (err) {
       if (err.isGeminiExhausted) {
         return res.status(429).json({ message: err.message, resetAt: err.resetAt });
@@ -843,7 +844,7 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
     const rawText = req.body.text || req.body.raw || '';
     let mcqs, errors, partialBlockIndices, source, usage;
     try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
     } catch (err) {
       if (err.isGeminiExhausted) {
         return res.status(429).json({ message: err.message, resetAt: err.resetAt });
@@ -999,7 +1000,7 @@ export const parseProffOtherSubjectMcqs = async (req, res, next) => {
     const rawText = req.body.text || req.body.raw || '';
     let mcqs, errors, partialBlockIndices, source, usage;
     try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
     } catch (err) {
       if (err.isGeminiExhausted) {
         return res.status(429).json({ message: err.message, resetAt: err.resetAt });
@@ -1021,7 +1022,7 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
     const rawText = req.body.text || req.body.raw || '';
     let mcqs, errors, partialBlockIndices, source, usage;
     try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqsWithFallback(rawText));
+      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
     } catch (err) {
       if (err.isGeminiExhausted) {
         return res.status(429).json({ message: err.message, resetAt: err.resetAt });
@@ -1180,7 +1181,8 @@ export const getGeminiUsage = async (req, res, next) => {
     }
     const result = getGeminiUsageFromStore();
     const easegpt = getEaseGPTUsage();
-    res.json({ ...result, easegpt });
+    const openai = getOpenAIUsage();
+    res.json({ ...result, easegpt, openai });
   } catch (err) {
     next(err);
   }
@@ -1279,6 +1281,7 @@ export const getGeminiUsageLogs = async (req, res, next) => {
       { requests: 0, tokens: 0 }
     );
 
+    const openai = getOpenAIUsage();
     res.json({
       date: new Date(dayStart).toISOString().slice(0, 10),
       page,
@@ -1291,7 +1294,7 @@ export const getGeminiUsageLogs = async (req, res, next) => {
         tokens: e.tokens || 0,
         meta: e.meta || {},
       })),
-      summary: { keys, totals },
+      summary: { keys, totals, openai },
     });
   } catch (err) {
     next(err);
