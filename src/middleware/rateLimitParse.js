@@ -27,3 +27,37 @@ export const parseMcqRateLimiter = rateLimit({
     });
   },
 });
+const WINDOW_MS = 60 * 1000;
+const MAX_REQUESTS = 5;
+
+const userRequests = new Map();
+
+export function rateLimitUser(req, res, next) {
+  const userId = req.user?._id?.toString();
+
+  if (!userId) {
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
+  const now = Date.now();
+  const entry = userRequests.get(userId);
+
+  if (!entry) {
+    userRequests.set(userId, { count: 1, start: now });
+    return next();
+  }
+
+  if (now - entry.start > WINDOW_MS) {
+    userRequests.set(userId, { count: 1, start: now });
+    return next();
+  }
+
+  if (entry.count >= MAX_REQUESTS) {
+    return res.status(429).json({
+      message: 'Rate limit exceeded. You can only send 5 requests per minute.',
+    });
+  }
+
+  entry.count += 1;
+  next();
+}

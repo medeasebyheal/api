@@ -3,7 +3,7 @@ import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { auth } from '../middleware/auth.js';
 import { authApiLimiter } from '../middleware/publicRateLimit.js';
-import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture, logout, forgotPassword, resetPassword } from '../controllers/authController.js';
+import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture, logout, forgotPassword, resetPassword, pingStreak } from '../controllers/authController.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
@@ -53,6 +53,7 @@ router.post(
 );
 
 router.get('/me', auth, me);
+router.post('/streak/ping', auth, pingStreak);
 router.patch('/profile', auth, updateProfile);
 router.patch(
   '/profile-picture',

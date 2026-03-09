@@ -21,6 +21,10 @@ const userSchema = new mongoose.Schema(
       rollNumber: String,
       batch: String,
     },
+    // Study streak tracking
+    studyStreakDays: { type: Number, default: 0 },
+    studyStreakLastDate: { type: Date, default: null },
+    studyStreakGoal: { type: Number, default: 30 },
   },
   { timestamps: true }
 );

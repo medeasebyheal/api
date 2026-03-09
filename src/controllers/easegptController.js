@@ -4,25 +4,41 @@ import { EaseGPTResponse } from '../models/EaseGPTResponse.js';
 import { OspeEaseGPTResponse } from '../models/OspeEaseGPTResponse.js';
 import { canAccessTopic, canAccessModule } from '../utils/access.js';
 import { generateChatReply, generateOspeChatReply } from '../utils/easegptGemini.js';
+import { rateLimitUser } from '../utils/rateLimiter.js';
 
 const MAX_MESSAGE_LENGTH = 500;
 
+function applyRateLimit(req, res) {
+  return new Promise((resolve, reject) => {
+    rateLimitUser(req, res, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
 /**
  * POST /api/mcqs/easegpt
- * Body: { mcqId, context?, message, history? }
- * Returns cached reply if same (mcqId, message) was asked before; otherwise calls Gemini (tries next key on 429) and stores response.
  */
 export const easegptChat = async (req, res, next) => {
   try {
+    await applyRateLimit(req, res);
+
     const { mcqId, context, message, history } = req.body;
 
     if (!mcqId) {
       return res.status(400).json({ message: 'mcqId is required' });
     }
 
-    const userMessage = typeof message === 'string' ? message.trim().slice(0, MAX_MESSAGE_LENGTH) : '';
+    const userMessage =
+      typeof message === 'string'
+        ? message.trim().slice(0, MAX_MESSAGE_LENGTH)
+        : '';
+
     if (!userMessage) {
-      return res.status(400).json({ message: 'message is required and must be non-empty' });
+      return res
+        .status(400)
+        .json({ message: 'message is required and must be non-empty' });
     }
 
     const mcq = await Mcq.findById(mcqId).select('topic').lean();
@@ -40,7 +56,13 @@ export const easegptChat = async (req, res, next) => {
       return res.status(403).json({ message: 'Access denied to this topic' });
     }
 
-    const cached = await EaseGPTResponse.findOne({ mcq: mcqId, message: userMessage }).select('reply').lean();
+    const cached = await EaseGPTResponse.findOne({
+      mcq: mcqId,
+      message: userMessage,
+    })
+      .select('reply')
+      .lean();
+
     if (cached) {
       return res.json({ reply: cached.reply });
     }
@@ -48,20 +70,38 @@ export const easegptChat = async (req, res, next) => {
     const safeHistory = Array.isArray(history)
       ? history
           .slice(-20)
-          .filter((t) => t && (t.role === 'user' || t.role === 'model') && typeof t.content === 'string')
-          .map((t) => ({ role: t.role, content: t.content.slice(0, 2000) }))
+          .filter(
+            (t) =>
+              t &&
+              (t.role === 'user' || t.role === 'model') &&
+              typeof t.content === 'string'
+          )
+          .map((t) => ({
+            role: t.role,
+            content: t.content.slice(0, 2000),
+          }))
       : [];
 
     const reply = await generateChatReply(context || {}, safeHistory, userMessage);
+
     try {
-      await EaseGPTResponse.create({ mcq: mcqId, message: userMessage, reply });
+      await EaseGPTResponse.create({
+        mcq: mcqId,
+        message: userMessage,
+        reply,
+      });
     } catch (createErr) {
       if (createErr.code !== 11000) throw createErr;
     }
+
     res.json({ reply });
   } catch (err) {
     if (err.status === 429) {
-      return res.status(429).json({ message: err.message || 'AI is temporarily at capacity. Please try again in a few minutes.' });
+      return res.status(429).json({
+        message:
+          err.message ||
+          'AI is temporarily at capacity. Please try again in a few minutes.',
+      });
     }
     next(err);
   }
@@ -76,23 +116,32 @@ function getFlatOspeQuestions(ospe) {
 
 /**
  * POST /api/ospes/easegpt
- * Body: { ospeId, questionIndex, mode: 'mcq' | 'viva', context?, message, history? }
- * Uses Pakistan MBBS–specific OSPE prompt to explain MCQs or analyse viva answers.
  */
 export const easegptOspeChat = async (req, res, next) => {
   try {
+    await applyRateLimit(req, res);
+
     const { ospeId, questionIndex, mode, context, message, history } = req.body;
 
     if (!ospeId) {
       return res.status(400).json({ message: 'ospeId is required' });
     }
+
     if (typeof questionIndex !== 'number' || questionIndex < 0) {
-      return res.status(400).json({ message: 'questionIndex must be a non-negative number' });
+      return res
+        .status(400)
+        .json({ message: 'questionIndex must be a non-negative number' });
     }
 
-    const userMessage = typeof message === 'string' ? message.trim().slice(0, MAX_MESSAGE_LENGTH) : '';
+    const userMessage =
+      typeof message === 'string'
+        ? message.trim().slice(0, MAX_MESSAGE_LENGTH)
+        : '';
+
     if (!userMessage) {
-      return res.status(400).json({ message: 'message is required and must be non-empty' });
+      return res
+        .status(400)
+        .json({ message: 'message is required and must be non-empty' });
     }
 
     const ospe = await Ospe.findById(ospeId);
@@ -107,8 +156,11 @@ export const easegptOspeChat = async (req, res, next) => {
 
     const flatQuestions = getFlatOspeQuestions(ospe);
     const q = flatQuestions[questionIndex];
+
     if (!q) {
-      return res.status(400).json({ message: 'Invalid questionIndex for this OSPE' });
+      return res
+        .status(400)
+        .json({ message: 'Invalid questionIndex for this OSPE' });
     }
 
     const qType = q.type || context?.type || '';
@@ -117,27 +169,34 @@ export const easegptOspeChat = async (req, res, next) => {
     const safeHistory = Array.isArray(history)
       ? history
           .slice(-20)
-          .filter((t) => t && (t.role === 'user' || t.role === 'model') && typeof t.content === 'string')
-          .map((t) => ({ role: t.role, content: t.content.slice(0, 2000) }))
+          .filter(
+            (t) =>
+              t &&
+              (t.role === 'user' || t.role === 'model') &&
+              typeof t.content === 'string'
+          )
+          .map((t) => ({
+            role: t.role,
+            content: t.content.slice(0, 2000),
+          }))
       : [];
 
     const baseContext = {
       type: qType,
       questionText: q.questionText || q.question || '',
       options: Array.isArray(q.options) ? q.options : [],
-      correctIndex: typeof q.correctIndex === 'number' ? q.correctIndex : null,
+      correctIndex:
+        typeof q.correctIndex === 'number' ? q.correctIndex : null,
       expectedAnswer: q.expectedAnswer || '',
       stationNote: context?.stationNote || '',
     };
 
     if (ospeMode === 'mcq') {
       baseContext.selectedIndex =
-        typeof context?.selectedIndex === 'number' ? context.selectedIndex : null;
-    } else {
-      baseContext.studentAnswer = (context?.studentAnswer || '').toString();
-    }
-    // If this OSPE question is an MCQ, reuse the same MCQ prompt/logic.
-    if (ospeMode === 'mcq') {
+        typeof context?.selectedIndex === 'number'
+          ? context.selectedIndex
+          : null;
+
       const mcqContext = {
         question: baseContext.questionText,
         options: baseContext.options,
@@ -145,13 +204,17 @@ export const easegptOspeChat = async (req, res, next) => {
         explanation: baseContext.expectedAnswer,
         selectedIndex: baseContext.selectedIndex,
       };
-      const reply = await generateChatReply(mcqContext, safeHistory, userMessage);
+
+      const reply = await generateChatReply(
+        mcqContext,
+        safeHistory,
+        userMessage
+      );
+
       return res.json({ reply });
     }
 
-    // For OSPE viva use OSPE generator (already handled). For OSPE MCQ we used MCQ path above.
     if (ospeMode === 'viva') {
-      // Check cache for OSPE viva replies
       const cached = await OspeEaseGPTResponse.findOne({
         ospe: ospeId,
         questionIndex,
@@ -159,11 +222,18 @@ export const easegptOspeChat = async (req, res, next) => {
       })
         .select('reply')
         .lean();
+
       if (cached) {
         return res.json({ reply: cached.reply });
       }
 
-      const reply = await generateOspeChatReply(baseContext, safeHistory, userMessage, ospeMode);
+      const reply = await generateOspeChatReply(
+        baseContext,
+        safeHistory,
+        userMessage,
+        ospeMode
+      );
+
       try {
         await OspeEaseGPTResponse.create({
           ospe: ospeId,
@@ -174,22 +244,27 @@ export const easegptOspeChat = async (req, res, next) => {
       } catch (createErr) {
         if (createErr.code !== 11000) throw createErr;
       }
+
       return res.json({ reply });
     }
 
-    // Should not reach here, but fallback:
-    const reply = await generateOspeChatReply(baseContext, safeHistory, userMessage, ospeMode);
+    const reply = await generateOspeChatReply(
+      baseContext,
+      safeHistory,
+      userMessage,
+      ospeMode
+    );
+
     res.json({ reply });
   } catch (err) {
     if (err.status === 429) {
-      return res
-        .status(429)
-        .json({
-          message:
-            err.message ||
-            'AI is temporarily at capacity for OSPE analysis. Please try again in a few minutes.',
-        });
+      return res.status(429).json({
+        message:
+          err.message ||
+          'AI is temporarily at capacity for OSPE analysis. Please try again in a few minutes.',
+      });
     }
+
     next(err);
   }
 };

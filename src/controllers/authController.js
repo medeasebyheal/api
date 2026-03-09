@@ -234,6 +234,54 @@ export const me = async (req, res, next) => {
   }
 };
 
+export const pingStreak = async (req, res, next) => {
+  try {
+    const userId = req.user._id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const todayUTC = new Date();
+    // normalize to UTC date (midnight)
+    const today = new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate()));
+
+    let last = user.studyStreakLastDate ? new Date(user.studyStreakLastDate) : null;
+    let lastDateUTC = last
+      ? new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth(), last.getUTCDate()))
+      : null;
+
+    if (lastDateUTC && lastDateUTC.getTime() === today.getTime()) {
+      // already pinged today
+      return res.json({
+        studyStreakDays: user.studyStreakDays || 0,
+        studyStreakGoal: user.studyStreakGoal || 30,
+        message: 'Streak already recorded for today',
+      });
+    }
+
+    // If last was yesterday -> increment, otherwise reset to 1
+    const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    if (lastDateUTC && lastDateUTC.getTime() === yesterday.getTime()) {
+      user.studyStreakDays = (user.studyStreakDays || 0) + 1;
+    } else {
+      user.studyStreakDays = 1;
+    }
+    user.studyStreakLastDate = today;
+    if (!user.studyStreakGoal) user.studyStreakGoal = 30;
+    await user.save();
+
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
+    const u = await User.findById(user._id).select('-password');
+    res.json({
+      message: 'Streak updated',
+      studyStreakDays: u.studyStreakDays || 0,
+      studyStreakGoal: u.studyStreakGoal || 30,
+      user: { ...u.toObject(), packages },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const updateProfile = async (req, res, next) => {
   try {
     const { name, contact, academicDetails } = req.body;
