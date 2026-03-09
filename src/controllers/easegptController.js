@@ -4,7 +4,8 @@ import { EaseGPTResponse } from '../models/EaseGPTResponse.js';
 import { OspeEaseGPTResponse } from '../models/OspeEaseGPTResponse.js';
 import { canAccessTopic, canAccessModule } from '../utils/access.js';
 import { generateChatReply, generateOspeChatReply } from '../utils/easegptGemini.js';
-import { rateLimitUser } from '../utils/rateLimiter.js';
+import { rateLimitUser } from '../middleware/rateLimitParse.js';
+
 
 const MAX_MESSAGE_LENGTH = 500;
 
