@@ -395,18 +395,30 @@ export const parseBulkMcqsPreview = async (req, res, next) => {
 };
 export const bulkCreateMcqs = async (req, res, next) => {
   try {
-    const rawText = req.body.text || req.body.raw || '';
+    // Support two modes:
+    // 1) Client provides parsed MCQs in req.body.mcqs => use them directly (no parsing / OpenAI call)
+    // 2) Fallback: parse raw text in req.body.text (legacy)
+    const providedMcqs = Array.isArray(req.body.mcqs) ? req.body.mcqs : null;
     let mcqs, errors, partialBlockIndices, source, usage;
-    try {
-      ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
-    } catch (err) {
-      if (err.isGeminiExhausted) {
-        return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+    if (providedMcqs) {
+      mcqs = providedMcqs;
+      errors = [];
+      partialBlockIndices = [];
+      source = 'client';
+      usage = null;
+    } else {
+      const rawText = req.body.text || req.body.raw || '';
+      try {
+        ({ mcqs, errors, partialBlockIndices, source, usage } = await parseBulkMcqs(rawText));
+      } catch (err) {
+        if (err.isGeminiExhausted) {
+          return res.status(429).json({ message: err.message, resetAt: err.resetAt });
+        }
+        if (err.isGeminiMissing) {
+          return res.status(400).json({ message: err.message });
+        }
+        throw err;
       }
-      if (err.isGeminiMissing) {
-        return res.status(400).json({ message: err.message });
-      }
-      throw err;
     }
     console.log(`[Bulk MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const created = [];
