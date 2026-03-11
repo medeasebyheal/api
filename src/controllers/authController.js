@@ -26,6 +26,10 @@ function generateOtp(length = 6) {
 export const register = async (req, res, next) => {
   try {
     const { name, email, password, contact } = req.body;
+    // basic server-side validation
+    if (!name || !String(name).trim()) return res.status(400).json({ message: 'Full name is required' });
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: 'A valid email is required' });
+    if (!contact || String(contact).replace(/\D/g, '').length < 10) return res.status(400).json({ message: 'A valid contact number is required' });
     const existing = await User.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: 'Email already registered' });
@@ -48,6 +52,8 @@ export const register = async (req, res, next) => {
 export const verifyOtp = async (req, res, next) => {
   try {
     const { email, otp, name, password, contact } = req.body;
+    // validate required fields
+    if (!contact || String(contact).replace(/\D/g, '').length < 10) return res.status(400).json({ message: 'A valid contact number is required' });
     const existing = await User.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: 'Email already registered' });
@@ -338,6 +344,7 @@ export const createAdmin = async (req, res, next) => {
       return res.status(403).json({ message: 'Invalid secret' });
     }
     const { name, email, password, contact } = req.body;
+    if (!contact || String(contact).replace(/\D/g, '').length < 10) return res.status(400).json({ message: 'A valid contact number is required' });
     const existing = await User.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: 'Email already registered' });

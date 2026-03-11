@@ -8,7 +8,19 @@ const userSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     email: { type: String, required: true, lowercase: true, trim: true },
     password: { type: String, required: true, minlength: 6, select: false },
-    contact: { type: String, trim: true },
+    contact: {
+      type: String,
+      trim: true,
+      required: [true, 'Contact number is required'],
+      validate: {
+        validator: function (v) {
+          if (!v) return false;
+          const digits = String(v).replace(/\D/g, '');
+          return digits.length >= 10;
+        },
+        message: 'Contact number must contain at least 10 digits',
+      },
+    },
     role: { type: String, enum: ['student', 'admin', 'superadmin'], default: 'student' },
     isVerified: { type: Boolean, default: false },
     isBlocked: { type: Boolean, default: false },

@@ -23,6 +23,53 @@ export const list = async (req, res, next) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
+    // Optional subscription filter:
+    // supported values:
+    //  - 'true' => any subscribed (paid or free)
+    //  - 'false' => not subscribed
+    //  - 'free' => subscribed via free-trial packages
+    //  - 'paid' => subscribed via paid packages OR students with academic details
+    const { subscribed } = req.query;
+    if (subscribed) {
+      // Gather active packages and classify free vs paid
+      const activeUps = await UserPackage.find({ status: 'active' }).populate('package').catch(() => []);
+      const freeUserIds = new Set();
+      const paidUserIds = new Set();
+      for (const up of activeUps) {
+        const isFree = Boolean(up.package && (String(up.package.type || '').toLowerCase().includes('-free') || Number(up.package.price) === 0));
+        if (isFree) freeUserIds.add(String(up.user));
+        else paidUserIds.add(String(up.user));
+      }
+
+      // Students with academic details are considered subscribed (treated as paid)
+      const academicUsers = await User.find({
+        role: 'student',
+        deleted: { $ne: true },
+        $or: [
+          { 'academicDetails.institution': { $exists: true, $ne: '' } },
+          { 'academicDetails.rollNumber': { $exists: true, $ne: '' } },
+          { 'academicDetails.year': { $exists: true } },
+        ],
+      })
+        .distinct('_id')
+        .catch(() => []);
+      for (const id of academicUsers) paidUserIds.add(String(id));
+
+      const freeIds = Array.from(freeUserIds);
+      const paidIds = Array.from(paidUserIds);
+      const allSubscribedIds = Array.from(new Set([...freeIds, ...paidIds]));
+
+      if (subscribed === 'free') {
+        filter._id = { ...(filter._id || {}), $in: freeIds.length ? freeIds : ['000000000000000000000000'] };
+      } else if (subscribed === 'paid') {
+        filter._id = { ...(filter._id || {}), $in: paidIds.length ? paidIds : ['000000000000000000000000'] };
+      } else if (subscribed === 'true') {
+        filter._id = { ...(filter._id || {}), $in: allSubscribedIds.length ? allSubscribedIds : ['000000000000000000000000'] };
+      } else if (subscribed === 'false') {
+        filter._id = { ...(filter._id || {}), $nin: allSubscribedIds };
+      }
+    }
+
     const [users, total] = await Promise.all([
       User.find(filter)
         .select('-password -updatedAt') // include createdAt so frontend can show Joined date
@@ -32,8 +79,37 @@ export const list = async (req, res, next) => {
       User.countDocuments(filter)
     ]);
 
+    // Attach subscription metadata for the frontend to differentiate free trials from paid packages.
+    const userIds = users.map((u) => u._id);
+    const activePackages = await UserPackage.find({
+      user: { $in: userIds },
+      status: 'active'
+    }).populate('package');
+
+    const pkgByUser = {};
+    for (const up of activePackages) {
+      pkgByUser[String(up.user)] = up;
+    }
+
+    const usersWithSubscription = users.map((u) => {
+      const up = pkgByUser[String(u._id)] || null;
+      const doc = u.toObject ? u.toObject() : u;
+      const hasAcademic =
+        doc.role === 'student' &&
+        Boolean(doc.academicDetails && (doc.academicDetails.institution || doc.academicDetails.rollNumber || doc.academicDetails.year));
+      const hasActivePackage = Boolean(up) || hasAcademic;
+      const isFreeTrial = Boolean(
+        up && (up.package?.type?.toLowerCase?.().includes('-free') || Number(up.package?.price) === 0)
+      );
+      return {
+        ...doc,
+        hasActivePackage,
+        isFreeTrial,
+      };
+    });
+
     res.json({
-      users,
+      users: usersWithSubscription,
       total,
       page: Number(page),
       limit: Number(limit)
@@ -53,8 +129,15 @@ export const getOne = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
+    // include subscription metadata
+    const up = await UserPackage.findOne({ user: user._id, status: 'active' }).populate('package').catch(() => null);
+    const hasAcademic =
+      user.role === 'student' &&
+      Boolean(user.academicDetails && (user.academicDetails.institution || user.academicDetails.rollNumber || user.academicDetails.year));
+    const hasActivePackage = Boolean(up) || hasAcademic;
+    const isFreeTrial = Boolean(up && (up.package?.type?.toLowerCase?.().includes('-free') || Number(up.package?.price) === 0));
 
-    res.json(user);
+    res.json({ ...user, hasActivePackage, isFreeTrial });
 
   } catch (err) {
     next(err);
