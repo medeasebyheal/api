@@ -336,10 +336,16 @@ export async function generateOspeChatReply(
   const contextBlock = buildOspeContextBlock(context);
   const conversation = buildConversation(history);
 
-  const instruction =
-    mode === 'viva'
-      ? 'Evaluate the student answer and provide ideal OSPE bullet points.'
-      : 'Explain why the selected option is correct or incorrect.';
+  let instruction;
+  if (mode === 'viva') {
+    instruction = 'Evaluate the student answer and provide ideal OSPE bullet points.';
+  } else if (context && context.studentAnswer) {
+    // If student provided a free-text answer for a non-viva OSPE (image identification, short answer), ask for classification + recommended answer.
+    instruction =
+      'Classify the student answer as Correct / Partially correct / Incorrect / Misconception. Then provide a one-line recommended answer and a 2-3 sentence explanation of the underlying concept. Keep the reply concise.';
+  } else {
+    instruction = 'Explain why the selected option is correct or incorrect.';
+  }
 
   const prompt = `${SYSTEM_PROMPT_OSPE}
 

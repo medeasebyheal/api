@@ -190,6 +190,8 @@ export const easegptOspeChat = async (req, res, next) => {
         typeof q.correctIndex === 'number' ? q.correctIndex : null,
       expectedAnswer: q.expectedAnswer || '',
       stationNote: context?.stationNote || '',
+      imageDescription: context?.imageDescription || q.imageDescription || '',
+      studentAnswer: context?.studentAnswer || '',
     };
 
     if (ospeMode === 'mcq') {
@@ -204,12 +206,16 @@ export const easegptOspeChat = async (req, res, next) => {
         correctIndex: baseContext.correctIndex,
         explanation: baseContext.expectedAnswer,
         selectedIndex: baseContext.selectedIndex,
+        // include free-text student answer and image description for OSPE-style analysis
+        studentAnswer: baseContext.studentAnswer,
+        imageDescription: baseContext.imageDescription,
       };
 
-      const reply = await generateChatReply(
+      const reply = await generateOspeChatReply(
         mcqContext,
         safeHistory,
-        userMessage
+        userMessage,
+        ospeMode
       );
 
       return res.json({ reply });
