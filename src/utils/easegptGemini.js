@@ -274,10 +274,18 @@ If a question is unrelated, reply:
 OSPE MCQ
 Explain why the selected option is right or wrong and highlight key exam points.
 
-OSPE VIVA
-1. Classify answer: Correct / Partially Correct / Incorrect
-2. Explain missing or incorrect points
-3. Provide an ideal answer in 4–7 bullet points
+OSPE VIVA (written/short answers)
+Do NOT use only static "Correct" or "Incorrect". Always give a correctness percentage and use one of these labels:
+• Fully correct: 100%
+• Mostly correct: around 70–90%
+• Half correct: around 50%
+• Mostly incorrect: around 10–30%
+• Completely incorrect: 0%
+
+For each viva answer:
+1. State the label and exact percentage (e.g. "Mostly correct: 75%").
+2. Explain what was missing or incorrect.
+3. Provide an ideal answer in 4–7 bullet points.
 `;
 
 /* -------------------------------------------------------------------------- */
@@ -338,7 +346,8 @@ export async function generateOspeChatReply(
 
   let instruction;
   if (mode === 'viva') {
-    instruction = 'Evaluate the student answer and provide ideal OSPE bullet points.';
+    instruction =
+      'Evaluate the student answer using percentage-based correctness: state one of Fully correct (100%), Mostly correct (70-90%), Half correct (~50%), Mostly incorrect (10-30%), or Completely incorrect (0%) with the actual percentage, then explain missing/incorrect points and provide ideal OSPE bullet points. Do not use only "Correct" or "Incorrect".';
   } else if (context && context.studentAnswer) {
     // If student provided a free-text answer for a non-viva OSPE (image identification, short answer), ask for classification + recommended answer.
     instruction =

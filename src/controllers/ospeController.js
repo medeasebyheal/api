@@ -1,13 +1,18 @@
 import { Ospe } from '../models/Ospe.js';
 import { OspeAttempt } from '../models/OspeAttempt.js';
 import { canAccessModule } from '../utils/access.js';
+import { evaluateOspeWrittenAnswer } from '../utils/ospeEvaluateOpenAI.js';
+
+/** Normalize for fallback string comparison: lowercase, trim, collapse spaces. */
+function normalizeForCompare(s) {
+  return String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
 
 /** Flatten stations or legacy questions into a single list for answer indexing */
 function getFlatQuestions(ospe) {
-  if (ospe.stations && ospe.stations.length > 0) {
-    return ospe.stations.flatMap((s) => s.questions || []);
-  }
-  return ospe.questions || [];
+  return (ospe.stations && ospe.stations.length > 0)
+    ? ospe.stations.flatMap((s) => s.questions || [])
+    : (ospe.questions || []);
 }
 
 export const listByModule = async (req, res, next) => {
@@ -82,22 +87,49 @@ export const submitAttempt = async (req, res, next) => {
     }
 
     const flatQuestions = getFlatQuestions(ospe);
+    const mcqTypes = ['picture_mcq', 'text_mcq', 'guess_until_correct'];
 
-    const answerList = (answers || []).map((a, i) => {
+    const answerList = await Promise.all((answers || []).map(async (a, i) => {
       const qIndex = a.questionIndex ?? i;
       const q = flatQuestions[qIndex];
 
       let correct = false;
+      let correctnessPercentage = null;
+      let assessment = null;
 
       if (q) {
-        const mcqTypes = ['picture_mcq', 'text_mcq', 'guess_until_correct'];
-
         if (mcqTypes.includes(q.type) && q.correctIndex != null) {
           correct = q.correctIndex === Number(a.selectedIndex);
-        } else if (q.type === 'viva_written' && q.expectedAnswer) {
-          correct =
-            String((a.writtenAnswer || '').trim()).toLowerCase() ===
-            String(q.expectedAnswer).toLowerCase();
+          if (correct) correctnessPercentage = 100;
+          else correctnessPercentage = 0;
+          assessment = correct ? 'Correct' : 'Incorrect';
+        } else {
+          const written = (a.writtenAnswer || '').trim();
+          const expected = (q.expectedAnswer || '').trim();
+          if (written && expected && process.env.OPENAI_API_KEY) {
+            try {
+              const result = await evaluateOspeWrittenAnswer({
+                questionText: q.questionText || q.question || '',
+                expectedAnswer: expected,
+                userAnswer: written,
+              });
+              assessment = result.assessment;
+              correctnessPercentage = result.percentage;
+              correct = result.percentage >= 60;
+            } catch (_) {
+              const nWritten = normalizeForCompare(written);
+              const nExpected = normalizeForCompare(expected);
+              correct = nWritten === nExpected;
+              correctnessPercentage = correct ? 100 : 0;
+              assessment = correct ? 'Correct' : 'Incorrect';
+            }
+          } else {
+            const nWritten = normalizeForCompare(written);
+            const nExpected = normalizeForCompare(expected);
+            correct = nWritten === nExpected;
+            correctnessPercentage = correct ? 100 : 0;
+            assessment = correct ? 'Correct' : 'Incorrect';
+          }
         }
       }
 
@@ -106,8 +138,10 @@ export const submitAttempt = async (req, res, next) => {
         selectedIndex: a.selectedIndex,
         writtenAnswer: a.writtenAnswer,
         correct,
+        correctnessPercentage,
+        assessment,
       };
-    });
+    }));
 
     await OspeAttempt.create({
       user: req.user._id,

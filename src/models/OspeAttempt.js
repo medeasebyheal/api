@@ -9,6 +9,8 @@ const ospeAttemptSchema = new mongoose.Schema(
       selectedIndex: Number,
       writtenAnswer: String,
       correct: Boolean,
+      correctnessPercentage: Number,
+      assessment: String,
     }],
   },
   { timestamps: true }
