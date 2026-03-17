@@ -13,6 +13,7 @@ import { ProffOspe } from '../models/ProffOspe.js';
 import { Package } from '../models/Package.js';
 import { PromoCode } from '../models/PromoCode.js';
 import { User } from '../models/User.js';
+import { UserPackage } from '../models/UserPackage.js';
 import { Payment } from '../models/Payment.js';
 import { parseBulkMcqs } from '../utils/mcqGeminiParser.js';
 import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageStore.js';
@@ -1348,6 +1349,59 @@ export const deletePromoCode = async (req, res, next) => {
     const promo = await PromoCode.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     if (!promo) return res.status(404).json({ message: 'Promo code not found' });
     res.json({ message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+/** One-time admin action: assign all free-trial style packages to all student users. */
+export const activateFreeTrialForAllUsers = async (req, res, next) => {
+  try {
+    const freePkgs = await Package.find({
+      $or: [
+        { name: /free[-\s]?trial/i },
+        { planKey: 'free-trial' },
+        { type: /free/i },
+      ],
+    }).lean();
+
+    if (!freePkgs || freePkgs.length === 0) {
+      return res.status(400).json({ message: 'No free-trial style packages found' });
+    }
+
+    // Only target students who have not filled academicDetails yet
+    const students = await User.find({
+      role: 'student',
+      $or: [{ academicDetails: { $exists: false } }, { academicDetails: null }],
+    })
+      .select('_id email')
+      .lean();
+    let created = 0;
+    const expiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
+
+    for (const su of students) {
+      for (const pkg of freePkgs) {
+        // eslint-disable-next-line no-await-in-loop
+        const alreadyActive = await UserPackage.exists({
+          user: su._id,
+          package: pkg._id,
+          status: 'active',
+        });
+        if (alreadyActive) continue;
+
+        // eslint-disable-next-line no-await-in-loop
+        await UserPackage.create({
+          user: su._id,
+          package: pkg._id,
+          status: 'active',
+          approvedAt: new Date(),
+          expiresAt,
+        });
+        created += 1;
+      }
+    }
+
+    return res.json({ message: 'Free-trial activation completed', created });
   } catch (err) {
     next(err);
   }
