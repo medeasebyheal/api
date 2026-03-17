@@ -115,39 +115,45 @@ export async function canAccessTopicWithFreeTrial(user, topicId) {
     // ignore
   }
 
-  // Fallback: check any active UserPackage for this user and detect if it's a free trial by package name or planKey
-  if (!activeTrial) {
-    const possible = await UserPackage.findOne(trialQuery).populate('package').lean().catch(() => null);
-    if (possible && possible.package) {
-      const pkg = possible.package;
-      const name = (pkg.name || '').toString();
-      const planKey = pkg.planKey || '';
-      const ptype = (pkg.type || '').toString();
-      if (/free[-\s]?trial/i.test(name) || /free/i.test(ptype) || String(planKey) === 'free-trial' || (freePlan && String(pkg.plan || '') === String(freePlan._id))) {
-        activeTrial = possible;
-      }
-    }
+  // Fallback / expansion: collect all active UserPackages for this user
+  // and treat any whose package looks like a free trial as free-trial packages.
+  const trialPackages = await UserPackage.find(trialQuery).populate('package').lean().catch(() => []);
+  const freeTrialPackages = [];
+  for (const up of trialPackages || []) {
+    const pkg = up.package;
+    if (!pkg) continue;
+    const name = (pkg.name || '').toString();
+    const planKey = pkg.planKey || '';
+    const ptype = (pkg.type || '').toString();
+    const isFreeLike =
+      /free[-\s]?trial/i.test(name) ||
+      /free/i.test(ptype) ||
+      String(planKey) === 'free-trial' ||
+      (freePlan && String(pkg.plan || '') === String(freePlan._id));
+    if (isFreeLike) freeTrialPackages.push(up);
   }
 
-  if (!activeTrial) return { allowed: false, reason: 'No active free trial' };
-
-  // Ensure package populated so we can read moduleIds
-  if (!activeTrial.package || !Array.isArray(activeTrial.package.moduleIds)) {
-    const refreshed = await UserPackage.findById(activeTrial._id).populate('package').lean().catch(() => null);
-    if (refreshed) activeTrial = refreshed;
+  if (!activeTrial && freeTrialPackages.length > 0) {
+    // Keep one representative for backward-compat messages, but we will use
+    // all free-trial packages' modules when computing allowed topic IDs.
+    activeTrial = freeTrialPackages[0];
   }
 
-  // Use the first module (by createdAt) within each academic year (1st–4th),
-  // so free-trial users get a consistent "first topic of each subject" preview per year.
-  const years = await Year.find().sort({ createdAt: 1 }).lean();
+  if (!activeTrial && freeTrialPackages.length === 0) {
+    return { allowed: false, reason: 'No active free trial' };
+  }
+
+  // Build the list of modules from all free-trial packages, then allow the first
+  // topic of every subject within those modules.
   const moduleIds = [];
-  for (const y of (years || []).slice(0, 4)) {
-    // eslint-disable-next-line no-await-in-loop
-    const firstModule = await Module.findOne({ year: y._id })
-      .sort({ createdAt: 1 })
-      .select('_id')
-      .lean();
-    if (firstModule?._id) moduleIds.push(firstModule._id);
+  const packagesToUse = freeTrialPackages.length > 0 ? freeTrialPackages : [activeTrial];
+  for (const up of packagesToUse) {
+    const pkg = up.package;
+    if (!pkg || !Array.isArray(pkg.moduleIds)) continue;
+    for (const m of pkg.moduleIds) {
+      const id = (m && (m._id || m)) || null;
+      if (id) moduleIds.push(id);
+    }
   }
 
   const allowedIds = await getFirstTopicsForModules(moduleIds);

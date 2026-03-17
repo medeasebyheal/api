@@ -51,7 +51,7 @@ export const register = async (req, res, next) => {
 
 export const verifyOtp = async (req, res, next) => {
   try {
-    const { email, otp, name, password } = req.body;
+    const { email, otp, name, password, contact } = req.body;
     // validate required 
    
     const existing = await User.findOne({ email });
@@ -67,45 +67,43 @@ export const verifyOtp = async (req, res, next) => {
       return res.status(400).json({ message: 'Verification code has expired' });
     }
     const user = await User.create({ name, email, password, contact: contact || '', role: 'student', isVerified: true });
-    // Try to assign a free-trial package. Projects may use a Plan document or only Package records.
+    // Try to assign free-trial packages. Projects may use a Plan document or only Package records.
     const freeTrialPlan = await Plan.findOne({ planKey: 'free-trial' }).catch(() => null);
     if (freeTrialPlan) {
       user.activePlanId = freeTrialPlan._id;
       await user.save();
     }
 
-    // Find a Package to use for the free trial. Try several fallbacks for different schemas:
-    // 1) Package that references the Plan (package.plan === freeTrialPlan._id)
-    // 2) Package with a planKey field (package.planKey === 'free-trial')
-    // 3) Package whose name contains "free trial"
+    // Find ALL Packages to use for the free trial. Try several fallbacks for different schemas:
+    // 1) Packages that reference the Plan (package.plan === freeTrialPlan._id)
+    // 2) Packages with a planKey field (package.planKey === 'free-trial')
+    // 3) Packages whose name contains "free trial"
+    // 4) Packages that encode free in the type field (e.g. 'year_half_part1-free')
     try {
-      let freePkg = null;
+      const freePkgQuery = [];
       if (freeTrialPlan) {
-        freePkg = await Package.findOne({ plan: freeTrialPlan._id }).catch(() => null);
+        freePkgQuery.push({ plan: freeTrialPlan._id });
       }
-      if (!freePkg) {
-        freePkg = await Package.findOne({ planKey: 'free-trial' }).catch(() => null);
-      }
-      if (!freePkg) {
-        freePkg = await Package.findOne({ name: /free[-\s]?trial/i }).catch(() => null);
-      }
-      if (!freePkg) {
-        // fallback: packages that encode free in the type field (e.g. 'year_half_part1-free')
-        freePkg = await Package.findOne({ type: /-free$/i }).catch(() => null);
-      }
+      freePkgQuery.push(
+        { planKey: 'free-trial' },
+        { name: /free[-\s]?trial/i },
+        { type: /-free$/i }
+      );
 
-      if (freePkg) {
+      const freePkgs = await Package.find({ $or: freePkgQuery }).catch(() => []);
+
+      if (freePkgs && freePkgs.length > 0) {
         const expiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
-        await UserPackage.create({
-          user: user._id,
-          package: freePkg._id,
-          status: 'active',
-          approvedAt: new Date(),
-          expiresAt,
-        });
-
-        user.activePlanId = freePkg._id;
-        await user.save();
+        for (const pkg of freePkgs) {
+          // eslint-disable-next-line no-await-in-loop
+          await UserPackage.create({
+            user: user._id,
+            package: pkg._id,
+            status: 'active',
+            approvedAt: new Date(),
+            expiresAt,
+          });
+        }
       }
     } catch (err) {
       // do not block registration on failures here
