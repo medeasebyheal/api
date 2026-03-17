@@ -51,9 +51,9 @@ export const register = async (req, res, next) => {
 
 export const verifyOtp = async (req, res, next) => {
   try {
-    const { email, otp, name, password, contact } = req.body;
-    // validate required fields
-    if (!contact || String(contact).replace(/\D/g, '').length < 10) return res.status(400).json({ message: 'A valid contact number is required' });
+    const { email, otp, name, password } = req.body;
+    // validate required 
+   
     const existing = await User.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: 'Email already registered' });

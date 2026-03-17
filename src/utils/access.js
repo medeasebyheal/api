@@ -137,11 +137,17 @@ export async function canAccessTopicWithFreeTrial(user, topicId) {
     if (refreshed) activeTrial = refreshed;
   }
 
-  // Always use the first module by createdAt across the entire platform
-  let moduleIds = [];
-  const allModules = await Module.find().sort({ createdAt: 1 }).limit(1).lean();
-  if (allModules && allModules.length > 0) {
-    moduleIds = [allModules[0]._id];
+  // Use the first module (by createdAt) within each academic year (1st–4th),
+  // so free-trial users get a consistent "first topic of each subject" preview per year.
+  const years = await Year.find().sort({ createdAt: 1 }).lean();
+  const moduleIds = [];
+  for (const y of (years || []).slice(0, 4)) {
+    // eslint-disable-next-line no-await-in-loop
+    const firstModule = await Module.findOne({ year: y._id })
+      .sort({ createdAt: 1 })
+      .select('_id')
+      .lean();
+    if (firstModule?._id) moduleIds.push(firstModule._id);
   }
 
   const allowedIds = await getFirstTopicsForModules(moduleIds);
