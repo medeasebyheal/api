@@ -51,7 +51,13 @@ export const create = async (req, res, next) => {
       }
     }
 
-    const originalAmount = Number(amount ?? pkg.price) || 0;
+    // Client sends `amount` as the checkout total (after promo on the UI). When a promo code is
+    // present we must base the discount on package price — same as /promo-codes/validate — not on
+    // the submitted amount, or the discount would be applied twice and stored amount would not
+    // match what the user saw at checkout.
+    const pkgPrice = Number(pkg.price) || 0;
+    const submittedAmount = Number(amount);
+    const originalAmount = promoCodeInput ? pkgPrice : (Number.isFinite(submittedAmount) && submittedAmount >= 0 ? submittedAmount : pkgPrice);
     let finalAmount = originalAmount;
     let appliedPromoId = null;
 
