@@ -19,6 +19,8 @@ const userSchema = new mongoose.Schema(
     freeTrialUsed: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', default: null },
     activePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', default: null },
     avatarUrl: { type: String, trim: true },
+    university: { type: String, required: true, trim: true },
+    college: { type: String, trim: true },
     academicDetails: {
       institution: String,
       year: Number,

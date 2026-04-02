@@ -25,11 +25,12 @@ function generateOtp(length = 6) {
 
 export const register = async (req, res, next) => {
   try {
-    const { name, email, password, contact } = req.body;
+    const { name, email, password, contact, university, college } = req.body;
     // basic server-side validation
     if (!name || !String(name).trim()) return res.status(400).json({ message: 'Full name is required' });
     if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ message: 'A valid email is required' });
     if (!contact || String(contact).replace(/\D/g, '').length < 10) return res.status(400).json({ message: 'A valid contact number is required' });
+    if (!university || !String(university).trim()) return res.status(400).json({ message: 'University is required' });
     const existing = await User.findOne({ email });
     if (existing) {
       return res.status(400).json({ message: 'Email already registered' });
@@ -51,7 +52,7 @@ export const register = async (req, res, next) => {
 
 export const verifyOtp = async (req, res, next) => {
   try {
-    const { email, otp, name, password, contact } = req.body;
+    const { email, otp, name, password, contact, university, college } = req.body;
     // validate required 
    
     const existing = await User.findOne({ email });
@@ -66,7 +67,7 @@ export const verifyOtp = async (req, res, next) => {
       await OtpVerification.deleteOne({ _id: record._id });
       return res.status(400).json({ message: 'Verification code has expired' });
     }
-    const user = await User.create({ name, email, password, contact: contact || '', role: 'student', isVerified: true });
+    const user = await User.create({ name, email, password, contact: contact || '', university, college, role: 'student', isVerified: true });
     // Try to assign free-trial packages. Projects may use a Plan document or only Package records.
     const freeTrialPlan = await Plan.findOne({ planKey: 'free-trial' }).catch(() => null);
     if (freeTrialPlan) {
