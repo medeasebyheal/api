@@ -289,10 +289,10 @@ export const pingStreak = async (req, res, next) => {
 
 export const updateProfile = async (req, res, next) => {
   try {
-    const { name, contact, academicDetails } = req.body;
+    const { name, contact, university, college, academicDetails } = req.body;
     const user = await User.findByIdAndUpdate(
       req.user._id,
-      { name, contact, academicDetails },
+      { name, contact, university, college, academicDetails },
       { new: true, runValidators: true }
     ).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
