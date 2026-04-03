@@ -11,7 +11,7 @@ const userSchema = new mongoose.Schema(
     contact: {
       type: String,
       trim: true,
-    
+
     },
     role: { type: String, enum: ['student', 'admin', 'superadmin'], default: 'student' },
     isVerified: { type: Boolean, default: false },
@@ -19,7 +19,7 @@ const userSchema = new mongoose.Schema(
     freeTrialUsed: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', default: null },
     activePlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'Plan', default: null },
     avatarUrl: { type: String, trim: true },
-    university: { type: String, required: true, trim: true },
+    university: { type: String, trim: true },
     college: { type: String, trim: true },
     academicDetails: {
       institution: String,
