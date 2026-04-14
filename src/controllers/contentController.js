@@ -99,7 +99,7 @@ export const listSubjects = async (req, res, next) => {
 export const getSubject = async (req, res, next) => {
   try {
     const sub = await Subject.findById(req.params.subjectId)
-      .select('_id name imageUrl module')
+      .select('_id name imageUrl videoUrls module')
       .lean();
 
     if (!sub) return res.status(404).json({ message: 'Subject not found' });
@@ -184,7 +184,7 @@ export const getTopic = async (req, res, next) => {
         _id: topic._id,
         name: topic.name,
         imageUrl: topic.imageUrl,
-        videoUrl: topic.videoUrl,
+        videoUrls: topic.videoUrls,
         content: hasAccess ? topic.content : undefined,
         subject: topic.subject,
       },

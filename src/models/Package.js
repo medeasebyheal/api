@@ -12,10 +12,12 @@ const packageSchema = new mongoose.Schema(
         'year_half_part2',
         'year_full',
         'master_proff',
+        'single_module',
         'year_half_part1-free',
         'year_half_part2-free',
         'year_full-free',
-        'master_proff-free'
+        'master_proff-free',
+        'single_module-free'
       ],
       required: true,
     },
