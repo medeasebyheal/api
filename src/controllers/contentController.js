@@ -116,14 +116,19 @@ export const listTopics = async (req, res, next) => {
     const limit = Math.max(10, Math.min(100, parseInt(req.query.limit || '20', 10)));
     const skip = (page - 1) * limit;
 
-    const topics = await Topic.find({ subject: req.params.subjectId })
-      .sort({ createdAt: 1 })
-      .skip(skip)
-      .limit(limit)
-      .select('_id name imageUrl createdAt')
-      .lean();
+    const query = { subject: req.params.subjectId };
 
-    res.json({ topics, page, limit });
+    const [topics, total] = await Promise.all([
+      Topic.find(query)
+        .sort({ createdAt: 1 })
+        .skip(skip)
+        .limit(limit)
+        .select('_id name imageUrl createdAt')
+        .lean(),
+      Topic.countDocuments(query)
+    ]);
+
+    res.json({ topics, page, limit, total, totalPages: Math.ceil(total / limit) });
   } catch (err) {
     next(err);
   }

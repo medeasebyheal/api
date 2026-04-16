@@ -1508,3 +1508,214 @@ export const resetAdminPassword = async (req, res, next) => {
     next(err);
   }
 };
+
+// --- Duplication & Cloning Helpers ---
+
+export const duplicateModule = async (req, res, next) => {
+  try {
+    const originalMod = await Module.findById(req.params.id).lean();
+    if (!originalMod) return res.status(404).json({ message: 'Module not found' });
+
+    // 1. Create new Module
+    const newModData = {
+      ...originalMod,
+      _id: undefined,
+      name: `${originalMod.name} (Copy)`,
+      subjectIds: [],
+      createdAt: undefined,
+      updatedAt: undefined,
+    };
+    const newMod = await Module.create(newModData);
+
+    // 2. Clone Subjects
+    const subjects = await Subject.find({ module: originalMod._id, deleted: { $ne: true } }).lean();
+    for (const sub of subjects) {
+      const newSubData = {
+        ...sub,
+        _id: undefined,
+        module: newMod._id,
+        topicIds: [],
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+      const newSub = await Subject.create(newSubData);
+      
+      // Add to module's subjectIds
+      await Module.findByIdAndUpdate(newMod._id, { $push: { subjectIds: newSub._id } });
+
+      // Clone OneShotLectures for this subject
+      const lectures = await OneShotLecture.find({ subject: sub._id, deleted: { $ne: true } }).lean();
+      for (const lec of lectures) {
+        await OneShotLecture.create({ ...lec, _id: undefined, subject: newSub._id, createdAt: undefined, updatedAt: undefined });
+      }
+
+      // Clone Topics
+      const topics = await Topic.find({ subject: sub._id, deleted: { $ne: true } }).lean();
+      for (const top of topics) {
+        const newTopData = {
+          ...top,
+          _id: undefined,
+          subject: newSub._id,
+          createdAt: undefined,
+          updatedAt: undefined,
+        };
+        const newTop = await Topic.create(newTopData);
+        
+        // Add to subject's topicIds
+        await Subject.findByIdAndUpdate(newSub._id, { $push: { topicIds: newTop._id } });
+
+        // Clone MCQs
+        const mcqs = await Mcq.find({ topic: top._id, deleted: { $ne: true } }).lean();
+        if (mcqs.length > 0) {
+          const newMcqs = mcqs.map(m => ({ ...m, _id: undefined, topic: newTop._id, createdAt: undefined, updatedAt: undefined }));
+          await Mcq.insertMany(newMcqs);
+        }
+
+        // Clone Resources
+        const resources = await TopicResource.find({ topic: top._id, deleted: { $ne: true } }).lean();
+        for (const res of resources) {
+          await TopicResource.create({ ...res, _id: undefined, topic: newTop._id, createdAt: undefined, updatedAt: undefined });
+        }
+      }
+    }
+
+    // 3. Clone OSPEs for this module
+    const ospes = await Ospe.find({ module: originalMod._id, deleted: { $ne: true } }).lean();
+    for (const ospe of ospes) {
+      // Deep clone stripping subdocument IDs
+      const stations = ospe.stations?.map(s => ({
+        ...s,
+        _id: undefined,
+        questions: s.questions?.map(q => ({ ...q, _id: undefined }))
+      })) || [];
+      const questions = ospe.questions?.map(q => ({ ...q, _id: undefined })) || [];
+
+      await Ospe.create({
+        ...ospe,
+        _id: undefined,
+        module: newMod._id,
+        createdAt: undefined,
+        updatedAt: undefined,
+        stations,
+        questions,
+      });
+    }
+
+    res.status(201).json(newMod);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const copySubject = async (req, res, next) => {
+  try {
+    const { targetModuleId } = req.body;
+    if (!targetModuleId) return res.status(400).json({ message: 'targetModuleId required' });
+
+    const originalSub = await Subject.findById(req.params.id).lean();
+    if (!originalSub) return res.status(404).json({ message: 'Subject not found' });
+
+    const targetMod = await Module.findById(targetModuleId);
+    if (!targetMod) return res.status(404).json({ message: 'Target module not found' });
+
+    // 1. Create new Subject
+    const newSubData = {
+      ...originalSub,
+      _id: undefined,
+      module: targetMod._id,
+      topicIds: [],
+      createdAt: undefined,
+      updatedAt: undefined,
+    };
+    const newSub = await Subject.create(newSubData);
+    
+    // Add to module's subjectIds
+    targetMod.subjectIds = targetMod.subjectIds || [];
+    targetMod.subjectIds.push(newSub._id);
+    await targetMod.save();
+
+    // 2. Clone OneShotLectures
+    const lectures = await OneShotLecture.find({ subject: originalSub._id, deleted: { $ne: true } }).lean();
+    for (const lec of lectures) {
+      await OneShotLecture.create({ ...lec, _id: undefined, subject: newSub._id, createdAt: undefined, updatedAt: undefined });
+    }
+
+    // 3. Clone Topics
+    const topics = await Topic.find({ subject: originalSub._id, deleted: { $ne: true } }).lean();
+    for (const top of topics) {
+      const newTopData = {
+        ...top,
+        _id: undefined,
+        subject: newSub._id,
+        createdAt: undefined,
+        updatedAt: undefined,
+      };
+      const newTop = await Topic.create(newTopData);
+      
+      // Add to subject's topicIds
+      await Subject.findByIdAndUpdate(newSub._id, { $push: { topicIds: newTop._id } });
+
+      // Clone MCQs
+      const mcqs = await Mcq.find({ topic: top._id, deleted: { $ne: true } }).lean();
+      if (mcqs.length > 0) {
+        const newMcqs = mcqs.map(m => ({ ...m, _id: undefined, topic: newTop._id, createdAt: undefined, updatedAt: undefined }));
+        await Mcq.insertMany(newMcqs);
+      }
+
+      // Clone Resources
+      const resources = await TopicResource.find({ topic: top._id, deleted: { $ne: true } }).lean();
+      for (const res of resources) {
+        await TopicResource.create({ ...res, _id: undefined, topic: newTop._id, createdAt: undefined, updatedAt: undefined });
+      }
+    }
+
+    res.status(201).json(newSub);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const copyTopic = async (req, res, next) => {
+  try {
+    const { targetSubjectId } = req.body;
+    if (!targetSubjectId) return res.status(400).json({ message: 'targetSubjectId required' });
+
+    const originalTop = await Topic.findById(req.params.id).lean();
+    if (!originalTop) return res.status(404).json({ message: 'Topic not found' });
+
+    const targetSub = await Subject.findById(targetSubjectId);
+    if (!targetSub) return res.status(404).json({ message: 'Target subject not found' });
+
+    // 1. Create new Topic
+    const newTopData = {
+      ...originalTop,
+      _id: undefined,
+      subject: targetSub._id,
+      createdAt: undefined,
+      updatedAt: undefined,
+    };
+    const newTop = await Topic.create(newTopData);
+    
+    // Add to subject's topicIds
+    targetSub.topicIds = targetSub.topicIds || [];
+    targetSub.topicIds.push(newTop._id);
+    await targetSub.save();
+
+    // 2. Clone MCQs
+    const mcqs = await Mcq.find({ topic: originalTop._id, deleted: { $ne: true } }).lean();
+    if (mcqs.length > 0) {
+      const newMcqs = mcqs.map(m => ({ ...m, _id: undefined, topic: newTop._id, createdAt: undefined, updatedAt: undefined }));
+      await Mcq.insertMany(newMcqs);
+    }
+
+    // 3. Clone Resources
+    const resources = await TopicResource.find({ topic: originalTop._id, deleted: { $ne: true } }).lean();
+    for (const res of resources) {
+      await TopicResource.create({ ...res, _id: undefined, topic: newTop._id, createdAt: undefined, updatedAt: undefined });
+    }
+
+    res.status(201).json(newTop);
+  } catch (err) {
+    next(err);
+  }
+};

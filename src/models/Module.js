@@ -7,6 +7,7 @@ const moduleSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     imageUrl: { type: String, trim: true, default: '' },
     subjectIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
+    universityType: { type: String, enum: ['Other', 'DOW/KMU'], default: 'Other' },
   },
   { timestamps: true }
 );

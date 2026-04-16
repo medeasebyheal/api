@@ -45,18 +45,21 @@ router.get('/modules', admin.listAllModules);
 router.post('/years/:yearId/modules', admin.createModule);
 router.put('/modules/:id', admin.updateModule);
 router.delete('/modules/:id', admin.deleteModule);
+router.post('/modules/:id/duplicate', admin.duplicateModule);
 
 router.get('/modules/:moduleId/subjects', admin.listSubjects);
 router.get('/subjects', admin.listAllSubjects);
 router.post('/modules/:moduleId/subjects', admin.createSubject);
 router.put('/subjects/:id', admin.updateSubject);
 router.delete('/subjects/:id', admin.deleteSubject);
+router.post('/subjects/:id/copy', admin.copySubject);
 
 router.get('/subjects/:subjectId/topics', admin.listTopics);
 router.get('/topics', admin.listAllTopics);
 router.post('/subjects/:subjectId/topics', admin.createTopic);
 router.put('/topics/:id', admin.updateTopic);
 router.delete('/topics/:id', admin.deleteTopic);
+router.post('/topics/:id/copy', admin.copyTopic);
 
 router.get('/topics/:topicId/mcqs', admin.listMcqs);
 router.get('/topics/:topicId/mcqs/:mcqId', admin.getMcq);
