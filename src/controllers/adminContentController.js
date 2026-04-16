@@ -1511,6 +1511,21 @@ export const resetAdminPassword = async (req, res, next) => {
 
 // --- Duplication & Cloning Helpers ---
 
+const sanitizeMetaData = (doc) => {
+  const clean = { ...doc };
+  if (clean.videoUrl && typeof clean.videoUrl !== 'string') {
+    clean.videoUrl = undefined;
+  }
+  if (clean.videoUrls) {
+    if (!Array.isArray(clean.videoUrls)) {
+      clean.videoUrls = [];
+    } else {
+      clean.videoUrls = clean.videoUrls.filter(u => typeof u === 'string' && !u.includes('ObjectId') && !u.includes('\n'));
+    }
+  }
+  return clean;
+};
+
 export const duplicateModule = async (req, res, next) => {
   try {
     const originalMod = await Module.findById(req.params.id).lean();
@@ -1518,7 +1533,7 @@ export const duplicateModule = async (req, res, next) => {
 
     // 1. Create new Module
     const newModData = {
-      ...originalMod,
+      ...sanitizeMetaData(originalMod),
       _id: undefined,
       name: `${originalMod.name} (Copy)`,
       subjectIds: [],
@@ -1531,7 +1546,7 @@ export const duplicateModule = async (req, res, next) => {
     const subjects = await Subject.find({ module: originalMod._id, deleted: { $ne: true } }).lean();
     for (const sub of subjects) {
       const newSubData = {
-        ...sub,
+        ...sanitizeMetaData(sub),
         _id: undefined,
         module: newMod._id,
         topicIds: [],
@@ -1553,7 +1568,7 @@ export const duplicateModule = async (req, res, next) => {
       const topics = await Topic.find({ subject: sub._id, deleted: { $ne: true } }).lean();
       for (const top of topics) {
         const newTopData = {
-          ...top,
+          ...sanitizeMetaData(top),
           _id: undefined,
           subject: newSub._id,
           createdAt: undefined,
@@ -1620,7 +1635,7 @@ export const copySubject = async (req, res, next) => {
 
     // 1. Create new Subject
     const newSubData = {
-      ...originalSub,
+      ...sanitizeMetaData(originalSub),
       _id: undefined,
       module: targetMod._id,
       topicIds: [],
@@ -1644,7 +1659,7 @@ export const copySubject = async (req, res, next) => {
     const topics = await Topic.find({ subject: originalSub._id, deleted: { $ne: true } }).lean();
     for (const top of topics) {
       const newTopData = {
-        ...top,
+        ...sanitizeMetaData(top),
         _id: undefined,
         subject: newSub._id,
         createdAt: undefined,
@@ -1688,7 +1703,7 @@ export const copyTopic = async (req, res, next) => {
 
     // 1. Create new Topic
     const newTopData = {
-      ...originalTop,
+      ...sanitizeMetaData(originalTop),
       _id: undefined,
       subject: targetSub._id,
       createdAt: undefined,
