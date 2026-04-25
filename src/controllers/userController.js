@@ -23,16 +23,10 @@ export const list = async (req, res, next) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Optional subscription filter:
-    // supported values:
-    //  - 'true' => any subscribed (paid or free)
-    //  - 'false' => not subscribed
-    //  - 'free' => subscribed via free-trial packages
-    //  - 'paid' => subscribed via paid packages OR students with academic details
     const { subscribed } = req.query;
     if (subscribed) {
-      // Gather active packages and classify free vs paid
-      const activeUps = await UserPackage.find({ status: 'active' }).populate('package').catch(() => []);
+      // Gather active packages and classify free vs paid — only when filter is active
+      const activeUps = await UserPackage.find({ status: 'active' }).populate('package').lean().catch(() => []);
       const freeUserIds = new Set();
       const paidUserIds = new Set();
       for (const up of activeUps) {
@@ -84,7 +78,7 @@ export const list = async (req, res, next) => {
     const activePackages = await UserPackage.find({
       user: { $in: userIds },
       status: 'active'
-    }).populate('package');
+    }).populate('package').lean();
 
     const pkgByUser = {};
     for (const up of activePackages) {
@@ -130,7 +124,7 @@ export const getOne = async (req, res, next) => {
       return res.status(404).json({ message: 'User not found' });
     }
     // include subscription metadata
-    const up = await UserPackage.findOne({ user: user._id, status: 'active' }).populate('package').catch(() => null);
+    const up = await UserPackage.findOne({ user: user._id, status: 'active' }).populate('package').lean().catch(() => null);
     const hasAcademic =
       user.role === 'student' &&
       Boolean(user.academicDetails && (user.academicDetails.institution || user.academicDetails.rollNumber || user.academicDetails.year));

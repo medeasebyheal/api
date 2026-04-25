@@ -69,6 +69,7 @@ router.delete('/topics/:topicId/mcqs/:mcqId', admin.deleteMcq);
 router.post('/topics/:topicId/mcqs/parse', parseMcqRateLimiter, admin.parseBulkMcqsPreview);
 router.post('/topics/:topicId/mcqs/bulk', admin.bulkCreateMcqs);
 router.post('/mcqs/remove-fifth-option', admin.removeFifthOptionFromMcqs);
+router.post('/mcqs/clean-options', admin.cleanMcqsOptions);
 router.post('/free-trial/activate-all', requireRole('superadmin'), admin.activateFreeTrialForAllUsers);
 
 router.get('/subjects/:subjectId/one-shot-lectures', admin.listOneShotLectures);

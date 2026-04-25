@@ -20,6 +20,7 @@ import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageS
 import { getEaseGPTUsage } from '../utils/easegptUsageStore.js';
 import { getOpenAIUsage } from '../utils/openaiUsageStore.js';
 import { GeminiUsageLog } from '../models/GeminiUsageLog.js';
+import mongoose from 'mongoose';
 
 // Programs (with years and modules count)
 export const listPrograms = async (req, res, next) => {
@@ -47,7 +48,7 @@ export const listPrograms = async (req, res, next) => {
         },
       },
       { $project: { years: 0, modCount: 0 } },
-    ]);
+    ]); // aggregation already returns plain objects
     res.json(programs);
   } catch (err) {
     next(err);
@@ -138,7 +139,7 @@ export const deleteYear = async (req, res, next) => {
 // Modules
 export const listModules = async (req, res, next) => {
   try {
-    const modules = await Module.find({ year: req.params.yearId }).sort({ createdAt: 1 });
+    const modules = await Module.find({ year: req.params.yearId }).sort({ createdAt: 1 }).lean();
     res.json(modules);
   } catch (err) {
     next(err);
@@ -186,7 +187,7 @@ export const listAllModules = async (req, res, next) => {
 // Subjects
 export const listSubjects = async (req, res, next) => {
   try {
-    const subjects = await Subject.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
+    const subjects = await Subject.find({ module: req.params.moduleId }).sort({ createdAt: 1 }).lean();
     res.json(subjects);
   } catch (err) {
     next(err);
@@ -258,7 +259,8 @@ export const listAllSubjects = async (req, res, next) => {
   try {
     const subjects = await Subject.find()
       .sort({ createdAt: 1 })
-      .populate({ path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } });
+      .populate({ path: 'module', select: 'name year', populate: { path: 'year', select: 'name _id' } })
+      .lean();
     res.json(subjects);
   } catch (err) {
     next(err);
@@ -268,7 +270,7 @@ export const listAllSubjects = async (req, res, next) => {
 // Topics
 export const listTopics = async (req, res, next) => {
   try {
-    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
+    const topics = await Topic.find({ subject: req.params.subjectId }).sort({ createdAt: 1 }).lean();
     res.json(topics);
   } catch (err) {
     next(err);
@@ -332,7 +334,7 @@ export const listAllTopics = async (req, res, next) => {
 // MCQs
 export const listMcqs = async (req, res, next) => {
   try {
-    const mcqs = await Mcq.find({ topic: req.params.topicId }).sort({ createdAt: 1 });
+    const mcqs = await Mcq.find({ topic: req.params.topicId }).sort({ createdAt: 1 }).lean();
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -340,7 +342,7 @@ export const listMcqs = async (req, res, next) => {
 };
 export const getMcq = async (req, res, next) => {
   try {
-    const mcq = await Mcq.findOne({ _id: req.params.mcqId, topic: req.params.topicId });
+    const mcq = await Mcq.findOne({ _id: req.params.mcqId, topic: req.params.topicId }).lean();
     if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
     res.json(mcq);
   } catch (err) {
@@ -422,19 +424,15 @@ export const bulkCreateMcqs = async (req, res, next) => {
       }
     }
     console.log(`[Bulk MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
-    const created = [];
-    for (let i = 0; i < mcqs.length; i++) {
-      const m = mcqs[i];
-      const doc = await Mcq.create({
-        topic: req.params.topicId,
-        question: m.question,
-        options: m.options,
-        correctIndex: m.correctIndex,
-        explanation: m.explanation || '',
-        type: req.body.type || 'text',
-      });
-      created.push(doc);
-    }
+    const docsToInsert = mcqs.map((m) => ({
+      topic: req.params.topicId,
+      question: m.question,
+      options: m.options,
+      correctIndex: m.correctIndex,
+      explanation: m.explanation || '',
+      type: req.body.type || 'text',
+    }));
+    const created = docsToInsert.length > 0 ? await Mcq.insertMany(docsToInsert) : [];
     res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created, source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
@@ -444,7 +442,7 @@ export const bulkCreateMcqs = async (req, res, next) => {
 // One Shot Lectures (YouTube lectures per subject)
 export const listOneShotLectures = async (req, res, next) => {
   try {
-    const lectures = await OneShotLecture.find({ subject: req.params.subjectId }).sort({ createdAt: 1 });
+    const lectures = await OneShotLecture.find({ subject: req.params.subjectId }).sort({ createdAt: 1 }).lean();
     res.json(lectures);
   } catch (err) {
     next(err);
@@ -488,7 +486,7 @@ export const deleteOneShotLecture = async (req, res, next) => {
 // Topic Resources (PDF upload + link)
 export const listTopicResources = async (req, res, next) => {
   try {
-    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ createdAt: 1 });
+    const resources = await TopicResource.find({ topic: req.params.topicId }).sort({ createdAt: 1 }).lean();
     res.json(resources);
   } catch (err) {
     next(err);
@@ -549,7 +547,7 @@ export const deleteTopicResource = async (req, res, next) => {
 // OSPEs
 export const listOspes = async (req, res, next) => {
   try {
-    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ createdAt: 1 });
+    const ospes = await Ospe.find({ module: req.params.moduleId }).sort({ createdAt: 1 }).lean();
     res.json(ospes);
   } catch (err) {
     next(err);
@@ -585,7 +583,7 @@ export const deleteOspe = async (req, res, next) => {
 // Proff
 export const listProff = async (req, res, next) => {
   try {
-    const list = await ProffStructure.find();
+    const list = await ProffStructure.find().lean();
     res.json(list);
   } catch (err) {
     next(err);
@@ -752,7 +750,7 @@ export const listProffJsmuPaperMcqs = async (req, res, next) => {
       university: 'jsmu',
       proffYear: req.params.yearId,
       proffPaper: req.params.paperId,
-    }).sort({ createdAt: 1 });
+    }).sort({ createdAt: 1 }).lean();
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -767,7 +765,7 @@ export const getProffJsmuPaperMcq = async (req, res, next) => {
       university: 'jsmu',
       proffYear: req.params.yearId,
       proffPaper: req.params.paperId,
-    });
+    }).lean();
     if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
     res.json(mcq);
   } catch (err) {
@@ -868,21 +866,17 @@ export const bulkCreateProffJsmuPaperMcqs = async (req, res, next) => {
       throw err;
     }
     console.log(`[Bulk Proff JSMU MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
-    const created = [];
-    for (let i = 0; i < mcqs.length; i++) {
-      const m = mcqs[i];
-      const doc = await ProffMcq.create({
-        university: 'jsmu',
-        proffYear: req.params.yearId,
-        proffPaper: req.params.paperId,
-        question: m.question,
-        options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
-        correctIndex: m.correctIndex ?? 0,
-        explanation: m.explanation || '',
-        type: req.body.type || 'text',
-      });
-      created.push(doc);
-    }
+    const docsToInsert = mcqs.map((m) => ({
+      university: 'jsmu',
+      proffYear: req.params.yearId,
+      proffPaper: req.params.paperId,
+      question: m.question,
+      options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
+      correctIndex: m.correctIndex ?? 0,
+      explanation: m.explanation || '',
+      type: req.body.type || 'text',
+    }));
+    const created = docsToInsert.length > 0 ? await ProffMcq.insertMany(docsToInsert) : [];
     res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created, source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
@@ -899,7 +893,7 @@ export const getProffJsmuPaperOspe = async (req, res, next) => {
       university: 'jsmu',
       proffYear: req.params.yearId,
       proffPaper: req.params.paperId,
-    });
+    }).lean();
     if (!ospe) return res.status(404).json({ message: 'OSPE not found' });
     res.json(ospe);
   } catch (err) {
@@ -935,7 +929,7 @@ export const listProffOtherSubjectMcqs = async (req, res, next) => {
       university: 'other',
       proffYear: req.params.yearId,
       proffSubject: req.params.subjectId,
-    }).sort({ createdAt: 1 });
+    }).sort({ createdAt: 1 }).lean();
     res.json(mcqs);
   } catch (err) {
     next(err);
@@ -948,7 +942,7 @@ export const getProffOtherSubjectMcq = async (req, res, next) => {
       university: 'other',
       proffYear: req.params.yearId,
       proffSubject: req.params.subjectId,
-    });
+    }).lean();
     if (!mcq) return res.status(404).json({ message: 'MCQ not found' });
     res.json(mcq);
   } catch (err) {
@@ -1046,21 +1040,17 @@ export const bulkCreateProffOtherSubjectMcqs = async (req, res, next) => {
       throw err;
     }
     console.log(`[Bulk Proff Other MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
-    const created = [];
-    for (let i = 0; i < mcqs.length; i++) {
-      const m = mcqs[i];
-      const doc = await ProffMcq.create({
-        university: 'other',
-        proffYear: req.params.yearId,
-        proffSubject: req.params.subjectId,
-        question: m.question,
-        options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
-        correctIndex: m.correctIndex ?? 0,
-        explanation: m.explanation || '',
-        type: req.body.type || 'text',
-      });
-      created.push(doc);
-    }
+    const docsToInsert = mcqs.map((m) => ({
+      university: 'other',
+      proffYear: req.params.yearId,
+      proffSubject: req.params.subjectId,
+      question: m.question,
+      options: m.options?.length ? m.options : ['Option 1', 'Option 2'],
+      correctIndex: m.correctIndex ?? 0,
+      explanation: m.explanation || '',
+      type: req.body.type || 'text',
+    }));
+    const created = docsToInsert.length > 0 ? await ProffMcq.insertMany(docsToInsert) : [];
     res.status(201).json({ created: created.length, errors, partialBlockIndices: partialBlockIndices || [], mcqs: created, source: source || null, usage: usage || null });
   } catch (err) {
     next(err);
@@ -1076,7 +1066,7 @@ export const getProffOtherSubjectOspe = async (req, res, next) => {
       university: 'other',
       proffYear: req.params.yearId,
       proffSubject: req.params.subjectId,
-    });
+    }).lean();
     if (!ospe) return res.status(404).json({ message: 'OSPE not found' });
     res.json(ospe);
   } catch (err) {
@@ -1105,7 +1095,7 @@ export const upsertProffOtherSubjectOspe = async (req, res, next) => {
 // Admin packages
 export const listPackagesAdmin = async (req, res, next) => {
   try {
-    const packages = await Package.find().sort({ year: 1, part: 1 }).populate('moduleIds');
+    const packages = await Package.find().sort({ year: 1, part: 1 }).populate('moduleIds').lean();
     res.json(packages);
   } catch (err) {
     next(err);
@@ -1164,11 +1154,11 @@ export const dashboardStats = async (req, res, next) => {
       User.find({ role: 'student' }).select('name email isVerified').sort({ createdAt: -1 }).limit(5).lean(),
       isSuperAdmin
         ? Payment.find()
-            .populate('user', 'name email')
-            .populate('package', 'name')
-            .sort({ createdAt: -1 })
-            .limit(8)
-            .lean()
+          .populate('user', 'name email')
+          .populate('package', 'name')
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .lean()
         : [],
     ]);
     res.json({
@@ -1317,7 +1307,7 @@ export const getGeminiUsageLogs = async (req, res, next) => {
 // Admin promo codes
 export const listPromoCodes = async (req, res, next) => {
   try {
-    const codes = await PromoCode.find().sort({ createdAt: -1 });
+    const codes = await PromoCode.find().sort({ createdAt: -1 }).lean();
     res.json(codes);
   } catch (err) {
     next(err);
@@ -1444,6 +1434,63 @@ export const removeFifthOptionFromMcqs = async (req, res, next) => {
   }
 };
 
+export const cleanMcqsOptions = async (req, res, next) => {
+  try {
+    const collection = mongoose.connection.collection("mcqs");
+    const cursor = collection.find({
+      options: {
+        $elemMatch: {
+          $regex: "✔️|\\(correct\\)",
+          $options: "i"
+        }
+      }
+    });
+
+    let updated = 0;
+
+    while (await cursor.hasNext()) {
+      const doc = await cursor.next();
+
+      if (!doc.options || !Array.isArray(doc.options)) continue;
+
+      let correctIndex = -1;
+
+      const cleanedOptions = doc.options.map((opt, index) => {
+        const isCorrect =
+          typeof opt === "string" &&
+          (opt.includes("✔️") || opt.toLowerCase().includes("(correct)"));
+
+        if (isCorrect && correctIndex === -1) {
+          correctIndex = index;
+        }
+
+        return typeof opt === "string"
+          ? opt
+            .replace("✔️", "")
+            .replace("(correct)", "")
+            .trim()
+          : opt;
+      });
+
+      await collection.updateOne(
+        { _id: doc._id },
+        {
+          $set: {
+            options: cleanedOptions,
+            correctIndex: correctIndex !== -1 ? correctIndex : doc.correctIndex
+          }
+        }
+      );
+
+      updated++;
+    }
+
+    res.json({ message: `Migration completed. Updated documents: ${updated}`, updated });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ——— Super admin only: list admins, create admin, reset password ———
 export const listAdmins = async (req, res, next) => {
   try {
@@ -1554,7 +1601,7 @@ export const duplicateModule = async (req, res, next) => {
         updatedAt: undefined,
       };
       const newSub = await Subject.create(newSubData);
-      
+
       // Add to module's subjectIds
       await Module.findByIdAndUpdate(newMod._id, { $push: { subjectIds: newSub._id } });
 
@@ -1575,7 +1622,7 @@ export const duplicateModule = async (req, res, next) => {
           updatedAt: undefined,
         };
         const newTop = await Topic.create(newTopData);
-        
+
         // Add to subject's topicIds
         await Subject.findByIdAndUpdate(newSub._id, { $push: { topicIds: newTop._id } });
 
@@ -1643,7 +1690,7 @@ export const copySubject = async (req, res, next) => {
       updatedAt: undefined,
     };
     const newSub = await Subject.create(newSubData);
-    
+
     // Add to module's subjectIds
     targetMod.subjectIds = targetMod.subjectIds || [];
     targetMod.subjectIds.push(newSub._id);
@@ -1666,7 +1713,7 @@ export const copySubject = async (req, res, next) => {
         updatedAt: undefined,
       };
       const newTop = await Topic.create(newTopData);
-      
+
       // Add to subject's topicIds
       await Subject.findByIdAndUpdate(newSub._id, { $push: { topicIds: newTop._id } });
 
@@ -1710,7 +1757,7 @@ export const copyTopic = async (req, res, next) => {
       updatedAt: undefined,
     };
     const newTop = await Topic.create(newTopData);
-    
+
     // Add to subject's topicIds
     targetSub.topicIds = targetSub.topicIds || [];
     targetSub.topicIds.push(newTop._id);

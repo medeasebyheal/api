@@ -27,7 +27,7 @@ export const create = async (req, res, next) => {
     if (!pkg) return res.status(404).json({ message: 'Package not found' });
 
     if (pkg.year != null) {
-      const existingPackages = await UserPackage.find({ user: req.user._id, status: 'active' }).populate('package');
+      const existingPackages = await UserPackage.find({ user: req.user._id, status: 'active' }).populate('package').lean();
 
       for (const ex of existingPackages) {
         if (!ex?.package) continue;
@@ -64,7 +64,7 @@ export const create = async (req, res, next) => {
     if (promoCodeInput) {
       const promo = await PromoCode.findOne({
         code: String(promoCodeInput).trim().toUpperCase(),
-      });
+      }).lean();
 
       if (promo && promo.isActive) {
         const now = new Date();
@@ -130,7 +130,8 @@ export const create = async (req, res, next) => {
 
     const populated = await Payment.findById(payment._id)
       .populate('package')
-      .populate('promoCode');
+      .populate('promoCode')
+      .lean();
 
     res.status(201).json(populated);
   } catch (err) {
@@ -149,7 +150,8 @@ export const list = async (req, res, next) => {
     const payments = await Payment.find(filter)
       .populate('user', 'name email')
       .populate('package')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     res.json(payments);
   } catch (err) {
@@ -189,7 +191,7 @@ export const verify = async (req, res, next) => {
       const pkg = payment.package;
 
       if (pkg?.year != null) {
-        const existingPackages = await UserPackage.find({ user: payment.user._id, status: 'active' }).populate('package');
+        const existingPackages = await UserPackage.find({ user: payment.user._id, status: 'active' }).populate('package').lean();
 
         for (const ex of existingPackages) {
           if (!ex?.package) continue;
@@ -216,7 +218,7 @@ export const verify = async (req, res, next) => {
       }
 
       if (pkg && !pkg.type.endsWith('-free')) {
-        const existingUserPackages = await UserPackage.find({ user: payment.user._id, status: 'active' }).populate('package');
+        const existingUserPackages = await UserPackage.find({ user: payment.user._id, status: 'active' }).populate('package').lean();
 
         const freeTrialsToRemove = existingUserPackages.filter(
           (up) => up.package && up.package.type.endsWith('-free')
@@ -236,19 +238,19 @@ export const verify = async (req, res, next) => {
         approvedAt: new Date(),
       });
 
-      const paymentPkg = await Package.findById(payment.package._id).populate('plan');
+      const paymentPkg = await Package.findById(payment.package._id).populate('plan').lean();
 
       let plan = paymentPkg?.plan;
 
       if (!plan && paymentPkg) {
         if (paymentPkg.type === 'master_proff') {
-          plan = await Plan.findOne({ planKey: 'master-proff' });
+          plan = await Plan.findOne({ planKey: 'master-proff' }).lean();
         } else {
           plan = await Plan.findOne({
             year: paymentPkg.year,
             part: paymentPkg.part,
             type: paymentPkg.type,
-          });
+          }).lean();
         }
       }
 

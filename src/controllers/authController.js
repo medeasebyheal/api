@@ -75,11 +75,7 @@ export const verifyOtp = async (req, res, next) => {
       await user.save();
     }
 
-    // Find ALL Packages to use for the free trial. Try several fallbacks for different schemas:
-    // 1) Packages that reference the Plan (package.plan === freeTrialPlan._id)
-    // 2) Packages with a planKey field (package.planKey === 'free-trial')
-    // 3) Packages whose name contains "free trial"
-    // 4) Packages that encode free in the type field (e.g. 'year_half_part1-free')
+    // Find ALL Packages to use for the free trial via single query instead of cascading findOne calls.
     try {
       const freePkgQuery = [];
       if (freeTrialPlan) {
@@ -91,20 +87,18 @@ export const verifyOtp = async (req, res, next) => {
         { type: /-free$/i }
       );
 
-      const freePkgs = await Package.find({ $or: freePkgQuery }).catch(() => []);
+      const freePkgs = await Package.find({ $or: freePkgQuery }).lean().catch(() => []);
 
       if (freePkgs && freePkgs.length > 0) {
         const expiresAt = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
-        for (const pkg of freePkgs) {
-          // eslint-disable-next-line no-await-in-loop
-          await UserPackage.create({
-            user: user._id,
-            package: pkg._id,
-            status: 'active',
-            approvedAt: new Date(),
-            expiresAt,
-          });
-        }
+        const userPkgDocs = freePkgs.map((pkg) => ({
+          user: user._id,
+          package: pkg._id,
+          status: 'active',
+          approvedAt: new Date(),
+          expiresAt,
+        }));
+        await UserPackage.insertMany(userPkgDocs);
       }
     } catch (err) {
       // do not block registration on failures here
@@ -154,11 +148,11 @@ export const login = async (req, res, next) => {
       ip: req.ip,
     });
     const token = signToken(user._id, session._id);
-    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
-    const u = await User.findById(user._id).select('-password');
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package').lean();
+    const u = await User.findById(user._id).select('-password').lean();
     res.json({
       token,
-      user: { ...u.toObject(), packages },
+      user: { ...u, packages },
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     });
   } catch (err) {
@@ -228,8 +222,9 @@ export const resetPassword = async (req, res, next) => {
 export const me = async (req, res, next) => {
   try {
     const packages = await UserPackage.find({ user: req.user._id, status: 'active' })
-      .populate('package');
-    const userObj = { ...req.user.toObject(), packages };
+      .populate('package')
+      .lean();
+    const userObj = { ...(req.user.toObject ? req.user.toObject() : req.user), packages };
     // Always return fresh user data for /me to avoid 304 Not Modified for critical endpoints
     // and prevent stale cached responses in clients.
     res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -274,13 +269,15 @@ export const pingStreak = async (req, res, next) => {
     if (!user.studyStreakGoal) user.studyStreakGoal = 30;
     await user.save();
 
-    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
-    const u = await User.findById(user._id).select('-password');
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package').lean();
+    // Re-read only the fields we need from the saved user instead of a second findById
+    const uObj = user.toObject();
+    delete uObj.password;
     res.json({
       message: 'Streak updated',
-      studyStreakDays: u.studyStreakDays || 0,
-      studyStreakGoal: u.studyStreakGoal || 30,
-      user: { ...u.toObject(), packages },
+      studyStreakDays: uObj.studyStreakDays || 0,
+      studyStreakGoal: uObj.studyStreakGoal || 30,
+      user: { ...uObj, packages },
     });
   } catch (err) {
     next(err);
@@ -296,7 +293,7 @@ export const updateProfile = async (req, res, next) => {
       { new: true, runValidators: true }
     ).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package').lean();
     res.json({ user: { ...user.toObject(), packages } });
   } catch (err) {
     next(err);
@@ -313,7 +310,7 @@ export const updateProfilePicture = async (req, res, next) => {
       { new: true }
     ).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package');
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package').lean();
     res.json({ user: { ...user.toObject(), packages } });
   } catch (err) {
     next(err);

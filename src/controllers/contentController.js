@@ -252,8 +252,8 @@ export const checkModuleAccess = async (req, res, next) => {
 };
 export const listTopicResources = async (req, res, next) => {
   try {
-    const topic = await Topic.findById(req.params.topicId);
-    if (!topic) return res.status(404).json({ message: 'Topic not found' });
+    const exists = await Topic.exists({ _id: req.params.topicId });
+    if (!exists) return res.status(404).json({ message: 'Topic not found' });
 
     const resources = await TopicResource.find({ topic: req.params.topicId })
       .sort({ createdAt: 1 })

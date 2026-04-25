@@ -26,9 +26,14 @@ export const auth = async (req, res, next) => {
     if (!session || !session.valid || String(session.user) !== String(decoded.userId)) {
       return res.status(401).json({ message: 'Session invalid' });
     }
-    // update lastSeen timestamp
-    session.lastSeen = new Date();
-    await session.save().catch(() => {});
+    // Throttle lastSeen writes to once per 5 minutes to reduce DB connection usage
+    const LAST_SEEN_THROTTLE_MS = 5 * 60 * 1000;
+    const now = Date.now();
+    const lastSeen = session.lastSeen ? new Date(session.lastSeen).getTime() : 0;
+    if (now - lastSeen > LAST_SEEN_THROTTLE_MS) {
+      session.lastSeen = new Date(now);
+      session.save().catch(() => {});  // fire-and-forget, don't await
+    }
     req.user = user;
     req.session = session;
     next();
