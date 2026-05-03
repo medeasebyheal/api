@@ -201,8 +201,27 @@ export const getTopic = async (req, res, next) => {
 
     if (hasAccess && includeMcqs) {
       const { Mcq } = await import('../models/Mcq.js');
-      const mcqs = await Mcq.find({ topic: topic._id }).sort({ createdAt: 1 });
-      response.mcqs = mcqs;
+      const mcqs = await Mcq.find({ topic: topic._id }).sort({ createdAt: 1 }).lean();
+      
+      const grouped = {};
+      mcqs.forEach(mcq => {
+        const setName = mcq.mcqSet?.trim() || 'Default';
+        if (!grouped[setName]) grouped[setName] = [];
+        grouped[setName].push(mcq);
+      });
+
+      const mcqSets = Object.keys(grouped).map(name => ({
+        name,
+        mcqs: grouped[name]
+      })).sort((a, b) => {
+        // 'Default' always first, others alphabetical
+        if (a.name === 'Default') return -1;
+        if (b.name === 'Default') return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      response.mcqs = mcqs; // Keep flat array for backward compatibility
+      response.mcqSets = mcqSets;
     }
 
     res.json(response);

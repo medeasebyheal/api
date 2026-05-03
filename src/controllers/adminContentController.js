@@ -426,6 +426,7 @@ export const bulkCreateMcqs = async (req, res, next) => {
     console.log(`[Bulk MCQ import] Parser: ${source || 'unknown'}, Creating ${mcqs?.length ?? 0} MCQs${usage ? `, Tokens: ${usage.totalTokenCount ?? '?'}` : ''}`);
     const docsToInsert = mcqs.map((m) => ({
       topic: req.params.topicId,
+      mcqSet: req.body.mcqSet || '',
       question: m.question,
       options: m.options,
       correctIndex: m.correctIndex,

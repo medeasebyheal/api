@@ -4,6 +4,7 @@ import { softDelete } from './plugins/softDelete.js';
 const mcqSchema = new mongoose.Schema(
   {
     topic: { type: mongoose.Schema.Types.ObjectId, ref: 'Topic', required: true },
+    mcqSet: { type: String, trim: true, default: '' },
     question: { type: String, required: true },
     options: [{ type: String, required: true }],
     correctIndex: { type: Number, required: true },
@@ -15,5 +16,7 @@ const mcqSchema = new mongoose.Schema(
   { timestamps: true }
 );
 softDelete(mcqSchema);
+
+mcqSchema.index({ topic: 1, mcqSet: 1 });
 
 export const Mcq = mongoose.model('Mcq', mcqSchema);
