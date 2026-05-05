@@ -70,6 +70,7 @@ router.post('/topics/:topicId/mcqs/parse', parseMcqRateLimiter, admin.parseBulkM
 router.post('/topics/:topicId/mcqs/bulk', admin.bulkCreateMcqs);
 router.post('/mcqs/remove-fifth-option', admin.removeFifthOptionFromMcqs);
 router.post('/mcqs/clean-options', admin.cleanMcqsOptions);
+router.post('/mcqs/migrate-text-to-guess', admin.migrateTextToGuessUntilCorrect);
 router.post('/free-trial/activate-all', requireRole('superadmin'), admin.activateFreeTrialForAllUsers);
 
 router.get('/subjects/:subjectId/one-shot-lectures', admin.listOneShotLectures);

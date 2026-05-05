@@ -1492,6 +1492,25 @@ export const cleanMcqsOptions = async (req, res, next) => {
   }
 };
 
+/** Migrate all MCQs with type 'text' to 'guess_until_correct'. */
+export const migrateTextToGuessUntilCorrect = async (req, res, next) => {
+  try {
+    const result = await Mcq.updateMany(
+      { type: 'text', deleted: { $ne: true } },
+      { $set: { type: 'guess_until_correct' } }
+    );
+    const updated = result.modifiedCount ?? 0;
+    res.json({
+      message: updated > 0
+        ? `Migrated ${updated} MCQ(s) from "text" to "guess_until_correct".`
+        : 'No MCQs with type "text" found.',
+      updated,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // ——— Super admin only: list admins, create admin, reset password ———
 export const listAdmins = async (req, res, next) => {
   try {
