@@ -4,6 +4,7 @@ import { parseMcqRateLimiter } from '../middleware/rateLimitParse.js';
 import multer from 'multer';
 import { uploadToCloudinary } from '../config/cloudinary.js';
 import * as admin from '../controllers/adminContentController.js';
+import * as analytics from '../controllers/adminAnalyticsController.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 const uploadPdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -23,6 +24,7 @@ router.post('/upload-image', upload.single('image'), async (req, res, next) => {
 });
 
 router.get('/dashboard', admin.dashboardStats);
+router.get('/analytics/kpi', analytics.getKpiDashboard);
 router.get('/gemini-usage', admin.getGeminiUsage);
 router.get('/gemini-usage/logs', admin.getGeminiUsageLogs);
 

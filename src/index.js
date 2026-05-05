@@ -14,6 +14,7 @@ import adminRoutes from './routes/admin.js';
 import contactRoutes from './routes/contact.js';
 import promoCodeRoutes from './routes/promoCode.js';
 import bookmarksRoutes from './routes/bookmarks.js';
+import analyticsRoutes from './routes/analytics.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -90,6 +91,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/promo-codes', promoCodeRoutes);
 app.use('/api/bookmarks', bookmarksRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
