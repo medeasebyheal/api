@@ -147,6 +147,7 @@ export const submitAttempt = async (req, res, next) => {
       user: req.user._id,
       ospe: ospeId,
       answers: answerList,
+      timeTakenSeconds: req.body.timeTakenSeconds || 0,
     });
 
     res.json({ saved: true, answers: answerList });

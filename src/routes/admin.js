@@ -25,6 +25,9 @@ router.post('/upload-image', upload.single('image'), async (req, res, next) => {
 
 router.get('/dashboard', admin.dashboardStats);
 router.get('/analytics/kpi', analytics.getKpiDashboard);
+router.get('/analytics/advanced', analytics.getAdvancedStats);
+router.get('/analytics/mcq-options', analytics.getMcqOptionStats);
+router.get('/analytics/students', analytics.getStudentReports);
 router.get('/gemini-usage', admin.getGeminiUsage);
 router.get('/gemini-usage/logs', admin.getGeminiUsageLogs);
 
@@ -70,6 +73,8 @@ router.put('/topics/:topicId/mcqs/:mcqId', admin.updateMcq);
 router.delete('/topics/:topicId/mcqs/:mcqId', admin.deleteMcq);
 router.post('/topics/:topicId/mcqs/parse', parseMcqRateLimiter, admin.parseBulkMcqsPreview);
 router.post('/topics/:topicId/mcqs/bulk', admin.bulkCreateMcqs);
+router.put('/topics/:topicId/mcq-sets', admin.updateMcqSet);
+router.delete('/topics/:topicId/mcq-sets', admin.deleteMcqSet);
 router.post('/mcqs/remove-fifth-option', admin.removeFifthOptionFromMcqs);
 router.post('/mcqs/clean-options', admin.cleanMcqsOptions);
 router.post('/mcqs/migrate-text-to-guess', admin.migrateTextToGuessUntilCorrect);

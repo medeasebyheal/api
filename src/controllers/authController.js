@@ -126,7 +126,7 @@ export const verifyOtp = async (req, res, next) => {
 
 export const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceId, deviceName } = req.body;
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password' });
@@ -138,18 +138,99 @@ export const login = async (req, res, next) => {
     if (!match) {
       return res.status(401).json({ message: 'Invalid email or password' });
     }
-    // For students, invalidate previous sessions so only one device remains active
+
+    // 2FA / Device Recognition Check
+    if (user.role === 'student' && deviceId) {
+      const isTrusted = user.trustedDevices.some(d => d.deviceId === deviceId);
+      if (!isTrusted) {
+        const otp = generateOtp(6);
+        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+        await OtpVerification.deleteMany({ email });
+        await OtpVerification.create({ email, otp, expiresAt });
+        await sendOtpVerification(email, otp, user.name).catch(() => {});
+        
+        return res.json({
+          require2FA: true,
+          email,
+          message: 'New device detected. Verification code sent to your email.'
+        });
+      }
+      
+      // Update lastUsedAt for the trusted device
+      await User.updateOne(
+        { _id: user._id, 'trustedDevices.deviceId': deviceId },
+        { $set: { 'trustedDevices.$.lastUsedAt': new Date() } }
+      );
+    }
+
+    // For students, invalidate previous sessions (Always one device)
     if (user.role === 'student') {
       await Session.updateMany({ user: user._id }, { valid: false }).catch(() => { });
     }
+
     const session = await Session.create({
       user: user._id,
       userAgent: req.headers['user-agent'] || '',
       ip: req.ip,
+      deviceId: deviceId || 'unknown'
     });
+    
     const token = signToken(user._id, session._id);
     const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package').lean();
     const u = await User.findById(user._id).select('-password').lean();
+    
+    res.json({
+      token,
+      user: { ...u, packages },
+      expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const verifyLogin2FA = async (req, res, next) => {
+  try {
+    const { email, otp, deviceId, deviceName } = req.body;
+    if (!email || !otp || !deviceId) {
+      return res.status(400).json({ message: 'Email, OTP and deviceId are required' });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const record = await OtpVerification.findOne({ email, otp });
+    if (!record || new Date() > record.expiresAt) {
+      return res.status(400).json({ message: 'Invalid or expired verification code' });
+    }
+
+    // Add device to trustedDevices
+    await User.findByIdAndUpdate(user._id, {
+      $push: { 
+        trustedDevices: { 
+          deviceId, 
+          name: deviceName || 'Unknown Device', 
+          lastUsedAt: new Date() 
+        } 
+      }
+    });
+
+    // Invalidate previous sessions
+    await Session.updateMany({ user: user._id }, { valid: false }).catch(() => { });
+
+    const session = await Session.create({
+      user: user._id,
+      userAgent: req.headers['user-agent'] || '',
+      ip: req.ip,
+      deviceId
+    });
+
+    await OtpVerification.deleteOne({ _id: record._id });
+
+    const token = signToken(user._id, session._id);
+    const packages = await UserPackage.find({ user: user._id, status: 'active' }).populate('package').lean();
+    const u = await User.findById(user._id).select('-password').lean();
+
     res.json({
       token,
       user: { ...u, packages },
@@ -358,6 +439,21 @@ export const createAdmin = async (req, res, next) => {
       message: 'Super admin created',
       user: u,
     });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const removeTrustedDevice = async (req, res, next) => {
+  try {
+    const { deviceId } = req.params;
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { trustedDevices: { deviceId } }
+    });
+    // Also invalidate any sessions for this device
+    await Session.updateMany({ user: req.user._id, deviceId }, { valid: false });
+    
+    res.json({ message: 'Device removed successfully' });
   } catch (err) {
     next(err);
   }

@@ -3,7 +3,7 @@ import multer from 'multer';
 import { body, validationResult } from 'express-validator';
 import { auth } from '../middleware/auth.js';
 import { authApiLimiter } from '../middleware/publicRateLimit.js';
-import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture, logout, forgotPassword, resetPassword, pingStreak } from '../controllers/authController.js';
+import { register, login, me, createAdmin, verifyOtp, updateProfile, updateProfilePicture, logout, forgotPassword, resetPassword, pingStreak, verifyLogin2FA, removeTrustedDevice } from '../controllers/authController.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
@@ -52,6 +52,18 @@ router.post(
   login
 );
 
+router.post(
+  '/verify-login-2fa',
+  authApiLimiter,
+  [
+    body('email').isEmail().normalizeEmail(),
+    body('otp').notEmpty(),
+    body('deviceId').notEmpty(),
+  ],
+  validate,
+  verifyLogin2FA
+);
+
 router.get('/me', auth, me);
 router.post('/streak/ping', auth, pingStreak);
 router.patch('/profile', auth, updateProfile);
@@ -61,6 +73,8 @@ router.patch(
   upload.single('avatar'),
   updateProfilePicture
 );
+
+router.delete('/trusted-devices/:deviceId', auth, removeTrustedDevice);
 
 router.post('/logout', auth, logout);
 router.post('/forgot-password', authApiLimiter, [

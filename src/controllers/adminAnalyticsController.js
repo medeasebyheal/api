@@ -4,6 +4,12 @@ import { ContentVisit } from '../models/ContentVisit.js';
 import { EaseGPTResponse } from '../models/EaseGPTResponse.js';
 import { OspeEaseGPTResponse } from '../models/OspeEaseGPTResponse.js';
 import { User } from '../models/User.js';
+import { TopicAttempt } from '../models/TopicAttempt.js';
+import { Topic } from '../models/Topic.js';
+import { Mcq } from '../models/Mcq.js';
+import { Subject } from '../models/Subject.js';
+import { Module } from '../models/Module.js';
+import { Year } from '../models/Year.js';
 
 export const getKpiDashboard = async (req, res, next) => {
   try {
@@ -124,7 +130,202 @@ export const getKpiDashboard = async (req, res, next) => {
       },
       topPerformer
     });
-    
+
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getAdvancedStats = async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const start = startDate ? new Date(startDate) : new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+    const end = endDate ? new Date(endDate) : new Date();
+
+    const dateFilter = { createdAt: { $gte: start, $lte: end } };
+
+    // 1. Year-wise topic engagement (Visits)
+    const yearWiseVisits = await ContentVisit.aggregate([
+      { $match: { ...dateFilter, contentType: 'topic' } },
+      { $lookup: { from: 'topics', localField: 'contentId', foreignField: '_id', as: 'topic' } },
+      { $unwind: '$topic' },
+      { $lookup: { from: 'subjects', localField: 'topic.subject', foreignField: '_id', as: 'subject' } },
+      { $unwind: '$subject' },
+      { $lookup: { from: 'modules', localField: 'subject.module', foreignField: '_id', as: 'module' } },
+      { $unwind: '$module' },
+      { $lookup: { from: 'years', localField: 'module.year', foreignField: '_id', as: 'year' } },
+      { $unwind: '$year' },
+      { $group: { _id: '$year.name', count: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // 2. Year-wise MCQ attempts
+    const yearWiseAttempts = await McqAttempt.aggregate([
+      { $match: dateFilter },
+      { $lookup: { from: 'mcqs', localField: 'mcq', foreignField: '_id', as: 'mcq' } },
+      { $unwind: '$mcq' },
+      { $lookup: { from: 'topics', localField: 'mcq.topic', foreignField: '_id', as: 'topic' } },
+      { $unwind: '$topic' },
+      { $lookup: { from: 'subjects', localField: 'topic.subject', foreignField: '_id', as: 'subject' } },
+      { $unwind: '$subject' },
+      { $lookup: { from: 'modules', localField: 'subject.module', foreignField: '_id', as: 'module' } },
+      { $unwind: '$module' },
+      { $lookup: { from: 'years', localField: 'module.year', foreignField: '_id', as: 'year' } },
+      { $unwind: '$year' },
+      { $group: { _id: '$year.name', count: { $sum: 1 }, correct: { $sum: { $cond: ['$correct', 1, 0] } } } },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // 3. Performance Trends (Success rate over time - monthly)
+    const performanceTrends = await McqAttempt.aggregate([
+      { $match: dateFilter },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$createdAt' },
+            month: { $month: '$createdAt' }
+          },
+          total: { $sum: 1 },
+          correct: { $sum: { $cond: ['$correct', 1, 0] } }
+        }
+      },
+      { $sort: { '_id.year': 1, '_id.month': 1 } }
+    ]);
+
+    res.json({
+      yearWiseVisits,
+      yearWiseAttempts,
+      performanceTrends
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getMcqOptionStats = async (req, res, next) => {
+  try {
+    const { topicId } = req.query;
+    let match = {};
+    if (topicId) {
+      const mcqs = await Mcq.find({ topic: topicId }).select('_id');
+      match.mcq = { $in: mcqs.map(m => m._id) };
+    }
+
+    const stats = await McqAttempt.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: { mcq: '$mcq', selectedIndex: '$selectedIndex' },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: '$_id.mcq',
+          options: {
+            $push: {
+              index: '$_id.selectedIndex',
+              count: '$count'
+            }
+          },
+          total: { $sum: '$count' }
+        }
+      },
+      { $lookup: { from: 'mcqs', localField: '_id', foreignField: '_id', as: 'mcqDetails' } },
+      { $unwind: '$mcqDetails' },
+      {
+        $project: {
+          question: '$mcqDetails.question',
+          correctIndex: '$mcqDetails.correctIndex',
+          options: 1,
+          total: 1
+        }
+      },
+      { $sort: { total: -1 } },
+      { $limit: 20 }
+    ]);
+
+    res.json(stats);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getStudentReports = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+    const search = req.query.search || '';
+
+    let match = {};
+    if (search) {
+      match = {
+        $or: [
+          { name: { $regex: search, $options: 'i' } },
+          { email: { $regex: search, $options: 'i' } }
+        ]
+      };
+    }
+
+    const users = await User.find(match)
+      .select('name email createdAt studyStreakDays')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await User.countDocuments(match);
+
+    const reports = await Promise.all(users.map(async (user) => {
+      // Get detailed stats for this user
+      const mcqCount = await McqAttempt.countDocuments({ user: user._id });
+      const correctCount = await McqAttempt.countDocuments({ user: user._id, correct: true });
+      const topicAttempts = await TopicAttempt.countDocuments({ user: user._id });
+      const totalTime = await TopicAttempt.aggregate([
+        { $match: { user: user._id } },
+        { $group: { _id: null, total: { $sum: '$timeTakenSeconds' } } }
+      ]);
+
+      // Categorize by year
+      const yearWiseStats = await TopicAttempt.aggregate([
+        { $match: { user: user._id } },
+        { $lookup: { from: 'topics', localField: 'topic', foreignField: '_id', as: 'topic' } },
+        { $unwind: '$topic' },
+        { $lookup: { from: 'subjects', localField: 'topic.subject', foreignField: '_id', as: 'subject' } },
+        { $unwind: '$subject' },
+        { $lookup: { from: 'modules', localField: 'subject.module', foreignField: '_id', as: 'module' } },
+        { $unwind: '$module' },
+        { $lookup: { from: 'years', localField: 'module.year', foreignField: '_id', as: 'year' } },
+        { $unwind: '$year' },
+        {
+          $group: {
+            _id: '$year.name',
+            count: { $sum: 1 },
+            avgScore: { $avg: '$score' }
+          }
+        }
+      ]);
+
+      return {
+        ...user,
+        mcqCount,
+        accuracy: mcqCount > 0 ? (correctCount / mcqCount * 100).toFixed(1) : 0,
+        topicAttempts,
+        totalTimeSeconds: totalTime[0]?.total || 0,
+        yearWiseStats
+      };
+    }));
+
+    res.json({
+      reports,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (err) {
     next(err);
   }

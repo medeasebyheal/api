@@ -12,6 +12,7 @@ const ospeAttemptSchema = new mongoose.Schema(
       correctnessPercentage: Number,
       assessment: String,
     }],
+    timeTakenSeconds: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

@@ -1,5 +1,6 @@
 import { Mcq } from '../models/Mcq.js';
 import { McqAttempt } from '../models/McqAttempt.js';
+import { TopicAttempt } from '../models/TopicAttempt.js';
 import { canAccessTopic } from '../utils/access.js';
 
 export const listByTopic = async (req, res, next) => {
@@ -33,6 +34,60 @@ export const submitAttempt = async (req, res, next) => {
       correct,
       correctIndex: mcq.correctIndex,
       explanation: mcq.explanation ?? undefined,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const submitTopicQuizSession = async (req, res, next) => {
+  try {
+    const { topicId, attempts, timeTakenSeconds } = req.body;
+    if (!topicId || !Array.isArray(attempts)) {
+      return res.status(400).json({ message: 'Invalid request data' });
+    }
+
+    const mcqIds = attempts.map(a => a.mcqId);
+    const mcqs = await Mcq.find({ _id: { $in: mcqIds } });
+    const mcqMap = new Map(mcqs.map(m => [m._id.toString(), m]));
+
+    let correctCount = 0;
+    const attemptDocs = [];
+
+    for (const attempt of attempts) {
+      const mcq = mcqMap.get(attempt.mcqId);
+      if (!mcq) continue;
+
+      const isCorrect = mcq.correctIndex === Number(attempt.selectedIndex);
+      if (isCorrect) correctCount++;
+
+      attemptDocs.push({
+        user: req.user._id,
+        mcq: attempt.mcqId,
+        selectedIndex: Number(attempt.selectedIndex),
+        correct: isCorrect,
+      });
+    }
+
+    // Bulk create McqAttempts
+    if (attemptDocs.length > 0) {
+      await McqAttempt.insertMany(attemptDocs);
+    }
+
+    // Create TopicAttempt session
+    const topicAttempt = await TopicAttempt.create({
+      user: req.user._id,
+      topic: topicId,
+      score: correctCount,
+      totalMcqs: attempts.length,
+      timeTakenSeconds: timeTakenSeconds || 0,
+    });
+
+    res.json({
+      success: true,
+      topicAttempt,
+      correctCount,
+      totalMcqs: attempts.length
     });
   } catch (err) {
     next(err);

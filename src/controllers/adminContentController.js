@@ -440,6 +440,39 @@ export const bulkCreateMcqs = async (req, res, next) => {
   }
 };
 
+export const updateMcqSet = async (req, res, next) => {
+  try {
+    const { topicId } = req.params;
+    const { oldSetName, newSetName } = req.body;
+    if (!oldSetName || newSetName === undefined) {
+      return res.status(400).json({ message: 'oldSetName and newSetName required' });
+    }
+    const result = await Mcq.updateMany(
+      { topic: topicId, mcqSet: oldSetName, deleted: { $ne: true } },
+      { $set: { mcqSet: newSetName.trim() } }
+    );
+    res.json({ updated: result.modifiedCount });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const deleteMcqSet = async (req, res, next) => {
+  try {
+    const { topicId } = req.params;
+    const { setName } = req.query;
+    if (!setName) return res.status(400).json({ message: 'setName query param required' });
+    
+    const result = await Mcq.updateMany(
+      { topic: topicId, mcqSet: setName, deleted: { $ne: true } },
+      { $set: { deleted: true, deletedAt: new Date() } }
+    );
+    res.json({ deleted: result.modifiedCount });
+  } catch (err) {
+    next(err);
+  }
+};
+
 // One Shot Lectures (YouTube lectures per subject)
 export const listOneShotLectures = async (req, res, next) => {
   try {

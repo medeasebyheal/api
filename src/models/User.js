@@ -31,6 +31,13 @@ const userSchema = new mongoose.Schema(
     studyStreakDays: { type: Number, default: 0 },
     studyStreakLastDate: { type: Date, default: null },
     studyStreakGoal: { type: Number, default: 30 },
+
+    // Device tracking for 2FA
+    trustedDevices: [{
+      deviceId: { type: String, required: true },
+      name: { type: String },
+      lastUsedAt: { type: Date, default: Date.now }
+    }],
   },
   { timestamps: true }
 );
