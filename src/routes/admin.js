@@ -28,6 +28,7 @@ router.get('/analytics/kpi', analytics.getKpiDashboard);
 router.get('/analytics/advanced', analytics.getAdvancedStats);
 router.get('/analytics/mcq-options', analytics.getMcqOptionStats);
 router.get('/analytics/students', analytics.getStudentReports);
+router.get('/analytics/students/:studentId', analytics.getStudentDetailedReport);
 router.get('/gemini-usage', admin.getGeminiUsage);
 router.get('/gemini-usage/logs', admin.getGeminiUsageLogs);
 

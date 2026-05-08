@@ -10,6 +10,10 @@ import { Mcq } from '../models/Mcq.js';
 import { Subject } from '../models/Subject.js';
 import { Module } from '../models/Module.js';
 import { Year } from '../models/Year.js';
+import { UserPackage } from '../models/UserPackage.js';
+import { Package } from '../models/Package.js';
+import { Payment } from '../models/Payment.js';
+import { GeminiUsageLog } from '../models/GeminiUsageLog.js';
 
 export const getKpiDashboard = async (req, res, next) => {
   try {
@@ -257,19 +261,38 @@ export const getStudentReports = async (req, res, next) => {
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
     const search = req.query.search || '';
+    const year = req.query.year ? parseInt(req.query.year) : null;
 
-    let match = {};
+    // 1. Find all paid packages
+    const paidPackages = await Package.find({ 
+      type: { $not: /-free$/ },
+      deleted: { $ne: true }
+    }).select('_id');
+
+    // 2. Find users who have at least one active paid package
+    const paidUsers = await UserPackage.distinct('user', { 
+      package: { $in: paidPackages.map(p => p._id) },
+      status: 'active'
+    });
+
+    let match = {
+      _id: { $in: paidUsers },
+      role: 'student'
+    };
+
     if (search) {
-      match = {
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } }
-        ]
-      };
+      match.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    if (year) {
+      match['academicDetails.year'] = year;
     }
 
     const users = await User.find(match)
-      .select('name email createdAt studyStreakDays')
+      .select('name email createdAt studyStreakDays academicDetails')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -325,6 +348,93 @@ export const getStudentReports = async (req, res, next) => {
         limit,
         totalPages: Math.ceil(total / limit)
       }
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const getStudentDetailedReport = async (req, res, next) => {
+  try {
+    const { studentId } = req.params;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const user = await User.findById(studentId).select('name email academicDetails').lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    // 1. MCQ Attempt History
+    const mcqHistory = await McqAttempt.find({ user: studentId })
+      .populate('mcq', 'question options correctIndex')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const totalMcqs = await McqAttempt.countDocuments({ user: studentId });
+
+    // 2. Performance Summary
+    const stats = await McqAttempt.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(studentId) } },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: 1 },
+          correct: { $sum: { $cond: ['$correct', 1, 0] } }
+        }
+      }
+    ]);
+
+    const summary = stats[0] || { total: 0, correct: 0 };
+    summary.accuracy = summary.total > 0 ? (summary.correct / summary.total * 100).toFixed(1) : 0;
+
+    // 3. Topic-wise performance
+    const topicPerformance = await McqAttempt.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(studentId) } },
+      { $lookup: { from: 'mcqs', localField: 'mcq', foreignField: '_id', as: 'mcqDoc' } },
+      { $unwind: '$mcqDoc' },
+      { $lookup: { from: 'topics', localField: 'mcqDoc.topic', foreignField: '_id', as: 'topic' } },
+      { $unwind: '$topic' },
+      {
+        $group: {
+          _id: '$topic._id',
+          name: { $first: '$topic.name' },
+          total: { $sum: 1 },
+          correct: { $sum: { $cond: ['$correct', 1, 0] } }
+        }
+      },
+      { $sort: { total: -1 } },
+      { $limit: 10 }
+    ]);
+
+    // 4. Activity Insights (attempts over last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const activityHistory = await McqAttempt.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(studentId), createdAt: { $gte: sevenDaysAgo } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    res.json({
+      user,
+      mcqHistory,
+      pagination: {
+        total: totalMcqs,
+        page,
+        limit,
+        totalPages: Math.ceil(totalMcqs / limit)
+      },
+      summary,
+      topicPerformance,
+      activityHistory
     });
   } catch (err) {
     next(err);
