@@ -29,6 +29,13 @@ router.get('/analytics/advanced', analytics.getAdvancedStats);
 router.get('/analytics/mcq-options', analytics.getMcqOptionStats);
 router.get('/analytics/students', analytics.getStudentReports);
 router.get('/analytics/students/:studentId', analytics.getStudentDetailedReport);
+// Phase 1 KPI routes
+router.get('/analytics/overview-kpis', analytics.getOverviewKpis);
+router.get('/analytics/active-trend', analytics.getActiveStudentsTrend);
+router.get('/analytics/at-risk', analytics.getAtRiskStudents);
+router.get('/analytics/mcq-heatmap', analytics.getMcqHeatmap);
+router.get('/analytics/most-failed', analytics.getMostFailedMcqs);
+router.get('/analytics/revenue', analytics.getRevenueStats);
 router.get('/gemini-usage', admin.getGeminiUsage);
 router.get('/gemini-usage/logs', admin.getGeminiUsageLogs);
 

@@ -208,15 +208,25 @@ export const getAdvancedStats = async (req, res, next) => {
 
 export const getMcqOptionStats = async (req, res, next) => {
   try {
-    const { topicId } = req.query;
+    const { topicId, search, page = 1, limit = 20 } = req.query;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
     let match = {};
     if (topicId) {
-      const mcqs = await Mcq.find({ topic: topicId }).select('_id');
-      match.mcq = { $in: mcqs.map(m => m._id) };
+      match.topic = new mongoose.Types.ObjectId(topicId);
+    }
+    if (search) {
+      match.question = { $regex: search, $options: 'i' };
     }
 
-    const stats = await McqAttempt.aggregate([
-      { $match: match },
+    const totalMcqs = await Mcq.countDocuments(match);
+    const mcqs = await Mcq.find(match).skip(skip).limit(limitNum).lean();
+    const mcqIds = mcqs.map(m => m._id);
+
+    const attempts = await McqAttempt.aggregate([
+      { $match: { mcq: { $in: mcqIds } } },
       {
         $group: {
           _id: { mcq: '$mcq', selectedIndex: '$selectedIndex' },
@@ -234,22 +244,32 @@ export const getMcqOptionStats = async (req, res, next) => {
           },
           total: { $sum: '$count' }
         }
-      },
-      { $lookup: { from: 'mcqs', localField: '_id', foreignField: '_id', as: 'mcqDetails' } },
-      { $unwind: '$mcqDetails' },
-      {
-        $project: {
-          question: '$mcqDetails.question',
-          correctIndex: '$mcqDetails.correctIndex',
-          options: 1,
-          total: 1
-        }
-      },
-      { $sort: { total: -1 } },
-      { $limit: 20 }
+      }
     ]);
 
-    res.json(stats);
+    const attemptMap = new Map(attempts.map(a => [a._id.toString(), a]));
+
+    const stats = mcqs.map(mcq => {
+      const attemptData = attemptMap.get(mcq._id.toString()) || { options: [], total: 0 };
+      return {
+        _id: mcq._id,
+        question: mcq.question,
+        correctIndex: mcq.correctIndex,
+        options: attemptData.options,
+        total: attemptData.total,
+        mcqOptions: mcq.options
+      };
+    });
+
+    res.json({
+      stats,
+      pagination: {
+        total: totalMcqs,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(totalMcqs / limitNum)
+      }
+    });
   } catch (err) {
     next(err);
   }
@@ -439,4 +459,141 @@ export const getStudentDetailedReport = async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+};
+
+// ─── Phase 1 KPI Endpoints ─────────────────────────────────────────────────
+
+export const getOverviewKpis = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const weekAgo    = new Date(Date.now() - 7  * 24 * 60 * 60 * 1000);
+    const monthAgo   = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [dauIds, wauIds, mauIds] = await Promise.all([
+      McqAttempt.distinct('user', { createdAt: { $gte: todayStart } }),
+      McqAttempt.distinct('user', { createdAt: { $gte: weekAgo } }),
+      McqAttempt.distinct('user', { createdAt: { $gte: monthAgo } }),
+    ]);
+    const paidPkgs   = await Package.find({ type: { $not: /-free$/ }, deleted: { $ne: true } }).select('_id').lean();
+    const paidPkgIds = paidPkgs.map(p => p._id);
+    const [totalPaidStudents, pendingPayments, revenueAgg, accuracyAgg, easeGptToday, mcqsToday] = await Promise.all([
+      UserPackage.distinct('user', { package: { $in: paidPkgIds }, status: 'active' }).then(a => a.length),
+      Payment.countDocuments({ status: 'pending' }),
+      Payment.aggregate([{ $match: { status: 'approved', createdAt: { $gte: monthStart } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+      McqAttempt.aggregate([{ $match: { createdAt: { $gte: monthAgo } } }, { $group: { _id: null, total: { $sum: 1 }, correct: { $sum: { $cond: ['$correct', 1, 0] } } } }]),
+      GeminiUsageLog.countDocuments({ timestamp: { $gte: todayStart } }),
+      McqAttempt.countDocuments({ createdAt: { $gte: todayStart } }),
+    ]);
+    const acc = accuracyAgg[0] || { total: 0, correct: 0 };
+    res.json({ dau: dauIds.length, wau: wauIds.length, mau: mauIds.length, totalPaidStudents, pendingPayments, revenueThisMonth: revenueAgg[0]?.total || 0, avgAccuracy: acc.total > 0 ? ((acc.correct / acc.total) * 100).toFixed(1) : 0, easeGptToday, mcqsToday });
+  } catch (err) { next(err); }
+};
+
+export const getActiveStudentsTrend = async (req, res, next) => {
+  try {
+    const days  = Math.min(parseInt(req.query.days) || 30, 90);
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const trend = await McqAttempt.aggregate([
+      { $match: { createdAt: { $gte: since } } },
+      { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, activeUsers: { $addToSet: '$user' }, attempts: { $sum: 1 } } },
+      { $project: { date: '$_id', activeUsers: { $size: '$activeUsers' }, attempts: 1 } },
+      { $sort: { _id: 1 } },
+    ]);
+    res.json(trend);
+  } catch (err) { next(err); }
+};
+
+export const getAtRiskStudents = async (req, res, next) => {
+  try {
+    const page   = parseInt(req.query.page)  || 1;
+    const limit  = parseInt(req.query.limit) || 15;
+    const skip   = (page - 1) * limit;
+    const cutoff = new Date(Date.now() - (parseInt(req.query.days) || 7) * 24 * 60 * 60 * 1000);
+    const paidPkgs    = await Package.find({ type: { $not: /-free$/ }, deleted: { $ne: true } }).select('_id').lean();
+    const paidUserIds = await UserPackage.distinct('user', { package: { $in: paidPkgs.map(p => p._id) }, status: 'active' });
+    const recentIds   = await McqAttempt.distinct('user', { user: { $in: paidUserIds }, createdAt: { $gte: cutoff } });
+    const recentSet   = new Set(recentIds.map(id => id.toString()));
+    const atRiskIds   = paidUserIds.filter(id => !recentSet.has(id.toString()));
+    const users = await User.find({ _id: { $in: atRiskIds } })
+      .select('name email academicDetails studyStreakDays createdAt')
+      .sort({ studyStreakDays: 1, createdAt: -1 })
+      .skip(skip).limit(limit).lean();
+    const enriched = await Promise.all(users.map(async u => {
+      const last = await McqAttempt.findOne({ user: u._id }).sort({ createdAt: -1 }).select('createdAt').lean();
+      return { ...u, lastActivityDate: last?.createdAt || null, daysInactive: last ? Math.floor((Date.now() - new Date(last.createdAt)) / 86400000) : null };
+    }));
+    res.json({ students: enriched, total: atRiskIds.length, page, limit, totalPages: Math.ceil(atRiskIds.length / limit) });
+  } catch (err) { next(err); }
+};
+
+export const getMcqHeatmap = async (req, res, next) => {
+  try {
+    const start = req.query.startDate ? new Date(req.query.startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const end   = req.query.endDate   ? new Date(req.query.endDate)   : new Date();
+    const heatmap = await McqAttempt.aggregate([
+      { $match: { createdAt: { $gte: start, $lte: end } } },
+      { $lookup: { from: 'mcqs',     localField: 'mcq',           foreignField: '_id', as: 'mcqDoc'  } }, { $unwind: '$mcqDoc' },
+      { $lookup: { from: 'topics',   localField: 'mcqDoc.topic',  foreignField: '_id', as: 'topic'   } }, { $unwind: '$topic' },
+      { $lookup: { from: 'subjects', localField: 'topic.subject', foreignField: '_id', as: 'subject' } }, { $unwind: '$subject' },
+      { $lookup: { from: 'modules',  localField: 'subject.module',foreignField: '_id', as: 'module'  } }, { $unwind: '$module' },
+      { $lookup: { from: 'years',    localField: 'module.year',   foreignField: '_id', as: 'year'    } }, { $unwind: '$year' },
+      { $group: { _id: { subjectId: '$subject._id', subjectName: '$subject.name', yearName: '$year.name' }, attempts: { $sum: 1 }, correct: { $sum: { $cond: ['$correct', 1, 0] } } } },
+      { $sort: { attempts: -1 } }, { $limit: 120 },
+    ]);
+    res.json(heatmap);
+  } catch (err) { next(err); }
+};
+
+export const getMostFailedMcqs = async (req, res, next) => {
+  try {
+    const minAttempts = parseInt(req.query.minAttempts) || 5;
+    const limit       = parseInt(req.query.limit)       || 20;
+    const failed = await McqAttempt.aggregate([
+      { $group: { _id: '$mcq', total: { $sum: 1 }, correct: { $sum: { $cond: ['$correct', 1, 0] } }, incorrect: { $sum: { $cond: [{ $not: '$correct' }, 1, 0] } } } },
+      { $match: { total: { $gte: minAttempts } } },
+      { $addFields: { failRate: { $multiply: [{ $divide: ['$incorrect', '$total'] }, 100] } } },
+      { $sort: { failRate: -1 } }, { $limit: limit },
+      { $lookup: { from: 'mcqs',     localField: '_id',           foreignField: '_id', as: 'mcqDoc'  } }, { $unwind: '$mcqDoc' },
+      { $lookup: { from: 'topics',   localField: 'mcqDoc.topic',  foreignField: '_id', as: 'topic'   } }, { $unwind: { path: '$topic',   preserveNullAndEmptyArrays: true } },
+      { $lookup: { from: 'subjects', localField: 'topic.subject', foreignField: '_id', as: 'subject' } }, { $unwind: { path: '$subject', preserveNullAndEmptyArrays: true } },
+      { $project: { question: '$mcqDoc.question', options: '$mcqDoc.options', correctIndex: '$mcqDoc.correctIndex', topicName: '$topic.name', subjectName: '$subject.name', total: 1, correct: 1, incorrect: 1, failRate: 1 } },
+    ]);
+    res.json(failed);
+  } catch (err) { next(err); }
+};
+
+export const getRevenueStats = async (req, res, next) => {
+  try {
+    const months = Math.min(parseInt(req.query.months) || 12, 24);
+    const since  = new Date(); since.setMonth(since.getMonth() - months); since.setDate(1); since.setHours(0,0,0,0);
+    const paidPkgs = await Package.find({ type: { $not: /-free$/ }, deleted: { $ne: true } }).select('_id').lean();
+    const freePkgs = await Package.find({ type: /-free$/ }).select('_id').lean();
+    const [monthlyRevenue, packageDistribution, revenueByPackage, totalRegistered, freeTrialCount, paidCount, promoStats] = await Promise.all([
+      Payment.aggregate([
+        { $match: { status: 'approved', createdAt: { $gte: since } } },
+        { $group: { _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } }, revenue: { $sum: '$amount' }, count: { $sum: 1 } } },
+        { $sort: { '_id.year': 1, '_id.month': 1 } },
+      ]),
+      UserPackage.aggregate([
+        { $match: { status: 'active' } },
+        { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } }, { $unwind: '$pkg' },
+        { $group: { _id: '$pkg.type', count: { $sum: 1 } } }, { $sort: { count: -1 } },
+      ]),
+      Payment.aggregate([
+        { $match: { status: 'approved', createdAt: { $gte: since } } },
+        { $lookup: { from: 'packages', localField: 'package', foreignField: '_id', as: 'pkg' } }, { $unwind: '$pkg' },
+        { $group: { _id: '$pkg.type', revenue: { $sum: '$amount' }, count: { $sum: 1 } } }, { $sort: { revenue: -1 } },
+      ]),
+      User.countDocuments({ role: 'student' }),
+      UserPackage.distinct('user', { package: { $in: freePkgs.map(p => p._id) } }).then(a => a.length),
+      UserPackage.distinct('user', { package: { $in: paidPkgs.map(p => p._id) }, status: 'active' }).then(a => a.length),
+      Payment.aggregate([
+        { $match: { status: 'approved', promoCode: { $exists: true, $ne: null } } },
+        { $group: { _id: null, totalWithPromo: { $sum: 1 }, totalDiscount: { $sum: { $subtract: [{ $ifNull: ['$originalAmount', '$amount'] }, '$amount'] } } } },
+      ]),
+    ]);
+    res.json({ monthlyRevenue, packageDistribution, revenueByPackage, conversionFunnel: { registered: totalRegistered, freeTrial: freeTrialCount, paid: paidCount, conversionRate: freeTrialCount > 0 ? ((paidCount / freeTrialCount) * 100).toFixed(1) : 0 }, promoStats: promoStats[0] || { totalWithPromo: 0, totalDiscount: 0 } });
+  } catch (err) { next(err); }
 };
