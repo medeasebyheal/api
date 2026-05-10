@@ -19,7 +19,19 @@ import analyticsRoutes from './routes/analytics.js';
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-connectDB();
+// ── Per-request DB connection (serverless-safe) ─────────────────────────
+// On Vercel every cold start creates a fresh function instance. Instead of
+// calling connectDB() at the top-level (which doesn't persist across
+// invocations), we call it as middleware so every request ensures the
+// cached connection is ready before hitting any handler.
+app.use(async (_req, _res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 const allowedOrigins = [
   process.env.CLIENT_URL || 'http://localhost:5173',
@@ -78,6 +90,14 @@ app.use((req, res, next) => {
 app.options('*', cors(corsOptions));
 app.set('etag', false);
 app.use(express.json());
+
+// ── Keepalive / health-check endpoint ───────────────────────────────────
+// Set up a cron job (e.g. cron-job.org) to hit /api/ping every 5 minutes.
+// This warms both the Vercel function and the MongoDB connection so cold
+// starts don't hit real users.
+app.get('/api/ping', async (_req, res) => {
+  res.json({ status: 'ok', timestamp: Date.now() });
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
