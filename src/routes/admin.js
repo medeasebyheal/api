@@ -100,6 +100,7 @@ router.delete('/topics/:topicId/resources/:resourceId', admin.deleteTopicResourc
 
 router.get('/modules/:moduleId/ospes', admin.listOspes);
 router.post('/modules/:moduleId/ospes', admin.createOspe);
+router.post('/modules/:moduleId/ospes/copy', admin.copyModuleOspes);
 router.put('/ospes/:id', admin.updateOspe);
 router.delete('/ospes/:id', admin.deleteOspe);
 

@@ -613,6 +613,29 @@ export const deleteOspe = async (req, res, next) => {
     next(err);
   }
 };
+export const copyModuleOspes = async (req, res, next) => {
+  try {
+    const { sourceModuleId, ospeIds } = req.body;
+    if (!sourceModuleId) return res.status(400).json({ message: 'sourceModuleId is required' });
+    
+    const query = { module: sourceModuleId, deleted: { $ne: true } };
+    if (ospeIds && Array.isArray(ospeIds) && ospeIds.length > 0) {
+      query._id = { $in: ospeIds };
+    }
+
+    const sourceOspes = await Ospe.find(query).lean();
+    if (!sourceOspes.length) return res.status(404).json({ message: 'No OSPEs found in source module' });
+    
+    const docsToInsert = sourceOspes.map((ospe) => {
+      const { _id, createdAt, updatedAt, ...rest } = ospe;
+      return { ...rest, module: req.params.moduleId };
+    });
+    const created = await Ospe.insertMany(docsToInsert);
+    res.status(201).json({ created: created.length });
+  } catch (err) {
+    next(err);
+  }
+};
 
 // Proff
 export const listProff = async (req, res, next) => {
