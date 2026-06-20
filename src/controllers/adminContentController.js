@@ -15,7 +15,7 @@ import { PromoCode } from '../models/PromoCode.js';
 import { User } from '../models/User.js';
 import { UserPackage } from '../models/UserPackage.js';
 import { Payment } from '../models/Payment.js';
-import { parseBulkMcqs } from '../utils/mcqGeminiParser.js';
+import { parseBulkMcqs, normalizeMcqList } from '../utils/mcqGeminiParser.js';
 import { getGeminiUsage as getGeminiUsageFromStore } from '../utils/geminiUsageStore.js';
 import { getEaseGPTUsage } from '../utils/easegptUsageStore.js';
 import { getOpenAIUsage } from '../utils/openaiUsageStore.js';
@@ -404,9 +404,7 @@ export const bulkCreateMcqs = async (req, res, next) => {
     const providedMcqs = Array.isArray(req.body.mcqs) ? req.body.mcqs : null;
     let mcqs, errors, partialBlockIndices, source, usage;
     if (providedMcqs) {
-      mcqs = providedMcqs;
-      errors = [];
-      partialBlockIndices = [];
+      ({ mcqs, errors, partialBlockIndices } = normalizeMcqList(providedMcqs));
       source = 'client';
       usage = null;
     } else {
