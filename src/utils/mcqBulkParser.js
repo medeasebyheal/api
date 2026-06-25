@@ -99,7 +99,7 @@ function hasOptionLine(block) {
  * Blocks are separated by double newline, by numbered lines "1. " "2. " "61. ", or by "⸻" (two-em dash).
  * Normalize so "  61. " or " 62. " mid-line is treated as block start (e.g. "Topic 16: ...  61. Q" -> newline before 61).
  */
-export function splitBlocks(text) {
+function splitBlocks(text) {
   let trimmed = text.trim();
   if (!trimmed) return [];
 
@@ -161,7 +161,7 @@ function splitBlockIntoLines(block) {
 /**
  * Parse a single block into { question, options, correctIndex, explanation }.
  */
-export function parseBlock(block, blockIndex) {
+function parseBlock(block, blockIndex) {
   const lines = splitBlockIntoLines(block);
   if (lines.length < 3) {
     return { error: `Block ${blockIndex + 1}: need at least question and 2 options` };
@@ -269,22 +269,13 @@ export function parseBlock(block, blockIndex) {
 
 const PLACEHOLDER_OPTION = /^(no options parsed|add options in edit|\(no options parsed[^)]*\)|\(add options in edit\))$/i;
 
-/** Relaxed criteria for hybrid parser rule-based path (explanation optional). */
-export function meetsBasicCriteria(parsed) {
-  if (!parsed.question?.trim()) return false;
-  const opts = (parsed.options || []).filter((o) => o?.trim() && !PLACEHOLDER_OPTION.test(String(o).trim()));
-  if (opts.length < 2) return false;
-  if (typeof parsed.correctIndex !== 'number' || parsed.correctIndex < 0) return false;
-  if (parsed.correctIndex >= opts.length) return false;
-  return true;
-}
-
 function meetsRequiredCriteria(parsed) {
-  if (!meetsBasicCriteria(parsed)) return false;
+  if (!parsed.question?.trim()) return false;
   const opts = parsed.options || [];
   if (opts.length !== 4) return false;
   if (opts.some((o) => !o?.trim() || PLACEHOLDER_OPTION.test(String(o).trim()))) return false;
-  if (parsed.correctIndex > 3) return false;
+  if (typeof parsed.correctIndex !== 'number' || parsed.correctIndex < 0 || parsed.correctIndex > 3) return false;
+  if (!opts[parsed.correctIndex]?.trim()) return false;
   if (!parsed.explanation?.trim()) return false;
   return true;
 }
