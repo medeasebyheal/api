@@ -98,6 +98,11 @@ router.post('/topics/:topicId/resources', uploadPdf.single('file'), admin.create
 router.put('/topics/:topicId/resources/:resourceId', admin.updateTopicResource);
 router.delete('/topics/:topicId/resources/:resourceId', admin.deleteTopicResource);
 
+router.get('/subjects/:subjectId/resources', admin.listSubjectResources);
+router.post('/subjects/:subjectId/resources', uploadPdf.single('file'), admin.createSubjectResource);
+router.put('/subjects/:subjectId/resources/:resourceId', admin.updateSubjectResource);
+router.delete('/subjects/:subjectId/resources/:resourceId', admin.deleteSubjectResource);
+
 router.get('/modules/:moduleId/ospes', admin.listOspes);
 router.post('/modules/:moduleId/ospes', admin.createOspe);
 router.post('/modules/:moduleId/ospes/copy', admin.copyModuleOspes);

@@ -6,6 +6,7 @@ import { Topic } from '../models/Topic.js';
 import { Mcq } from '../models/Mcq.js';
 import { OneShotLecture } from '../models/OneShotLecture.js';
 import { TopicResource } from '../models/TopicResource.js';
+import { SubjectResource } from '../models/SubjectResource.js';
 import { Ospe } from '../models/Ospe.js';
 import { ProffStructure } from '../models/ProffStructure.js';
 import { ProffMcq } from '../models/ProffMcq.js';
@@ -248,6 +249,7 @@ export const deleteSubject = async (req, res, next) => {
     const sub = await Subject.findById(req.params.id);
     if (!sub) return res.status(404).json({ message: 'Subject not found' });
     await OneShotLecture.updateMany({ subject: sub._id }, softDeleteSet);
+    await SubjectResource.updateMany({ subject: sub._id }, softDeleteSet);
     await Subject.findByIdAndUpdate(req.params.id, softDeleteSet, { new: true });
     await Module.updateOne({ _id: sub.module }, { $pull: { subjectIds: sub._id } });
     res.json({ message: 'Deleted' });
@@ -572,6 +574,67 @@ export const deleteTopicResource = async (req, res, next) => {
       { new: true }
     );
     if (!resource) return res.status(404).json({ message: 'Topic resource not found' });
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// Subject Resources (PDF upload + link)
+export const listSubjectResources = async (req, res, next) => {
+  try {
+    const resources = await SubjectResource.find({ subject: req.params.subjectId }).sort({ createdAt: 1 }).lean();
+    res.json(resources);
+  } catch (err) {
+    next(err);
+  }
+};
+export const createSubjectResource = async (req, res, next) => {
+  try {
+    const { type, title, url: bodyUrl } = req.body || {};
+    if (!type || !title) return res.status(400).json({ message: 'type and title required' });
+    if (type !== 'pdf' && type !== 'link') return res.status(400).json({ message: 'type must be pdf or link' });
+
+    let url = bodyUrl && bodyUrl.trim();
+    if (type === 'pdf' && req.file?.buffer) {
+      const { uploadRawToCloudinary } = await import('../config/cloudinary.js');
+      const result = await uploadRawToCloudinary(req.file.buffer, 'medease/subject-resources');
+      url = result.secure_url;
+    }
+    if (!url) return res.status(400).json({ message: type === 'pdf' ? 'PDF file or url required' : 'url required for link' });
+
+    const resource = await SubjectResource.create({
+      subject: req.params.subjectId,
+      type,
+      title: title.trim(),
+      url,
+    });
+    res.status(201).json(resource);
+  } catch (err) {
+    next(err);
+  }
+};
+export const updateSubjectResource = async (req, res, next) => {
+  try {
+    const resource = await SubjectResource.findOne({ _id: req.params.resourceId, subject: req.params.subjectId });
+    if (!resource) return res.status(404).json({ message: 'Subject resource not found' });
+    const { title, url } = req.body || {};
+    if (title != null) resource.title = title.trim();
+    if (url != null) resource.url = url.trim();
+    await resource.save();
+    res.json(resource);
+  } catch (err) {
+    next(err);
+  }
+};
+export const deleteSubjectResource = async (req, res, next) => {
+  try {
+    const resource = await SubjectResource.findOneAndUpdate(
+      { _id: req.params.resourceId, subject: req.params.subjectId },
+      softDeleteSet,
+      { new: true }
+    );
+    if (!resource) return res.status(404).json({ message: 'Subject resource not found' });
     res.json({ message: 'Deleted' });
   } catch (err) {
     next(err);

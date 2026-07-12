@@ -14,6 +14,7 @@ import {
   listTopics,
   getTopic,
   listTopicResources,
+  listSubjectResources,
   listSubjectOneShotLectures,
   listModuleOspesPublic,
   checkTopicAccess,
@@ -45,6 +46,7 @@ router.get('/modules/:moduleId/subjects', listSubjects);
 router.get('/subjects/:subjectId', getSubject);
 router.get('/subjects/:subjectId/topics', listTopics);
 router.get('/subjects/:subjectId/one-shot-lectures', listSubjectOneShotLectures);
+router.get('/subjects/:subjectId/resources', listSubjectResources);
 router.get('/topics/:id', optionalAuth, getTopic);
 router.get('/topics/:topicId/resources', listTopicResources);
 router.get('/modules/:moduleId/ospes', listModuleOspesPublic);

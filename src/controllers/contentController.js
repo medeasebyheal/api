@@ -3,6 +3,7 @@ import { Module } from '../models/Module.js';
 import { Subject } from '../models/Subject.js';
 import { Topic } from '../models/Topic.js';
 import { TopicResource } from '../models/TopicResource.js';
+import { SubjectResource } from '../models/SubjectResource.js';
 import { OneShotLecture } from '../models/OneShotLecture.js';
 import { Ospe } from '../models/Ospe.js';
 import { User } from '../models/User.js';
@@ -128,7 +129,22 @@ export const listTopics = async (req, res, next) => {
       Topic.countDocuments(query)
     ]);
 
-    res.json({ topics, page, limit, total, totalPages: Math.ceil(total / limit) });
+    const { Mcq } = await import('../models/Mcq.js');
+    const topicIds = topics.map((t) => t._id);
+    const mcqCounts = topicIds.length
+      ? await Mcq.aggregate([
+          { $match: { topic: { $in: topicIds }, deleted: { $ne: true } } },
+          { $group: { _id: '$topic', count: { $sum: 1 } } },
+        ])
+      : [];
+    const countMap = Object.fromEntries(mcqCounts.map((c) => [String(c._id), c.count]));
+
+    const topicsWithCounts = topics.map((t) => ({
+      ...t,
+      mcqCount: countMap[String(t._id)] || 0,
+    }));
+
+    res.json({ topics: topicsWithCounts, page, limit, total, totalPages: Math.ceil(total / limit) });
   } catch (err) {
     next(err);
   }
@@ -275,6 +291,21 @@ export const listTopicResources = async (req, res, next) => {
     if (!exists) return res.status(404).json({ message: 'Topic not found' });
 
     const resources = await TopicResource.find({ topic: req.params.topicId })
+      .sort({ createdAt: 1 })
+      .lean();
+
+    res.json(resources);
+  } catch (err) {
+    next(err);
+  }
+};
+
+export const listSubjectResources = async (req, res, next) => {
+  try {
+    const exists = await Subject.exists({ _id: req.params.subjectId });
+    if (!exists) return res.status(404).json({ message: 'Subject not found' });
+
+    const resources = await SubjectResource.find({ subject: req.params.subjectId })
       .sort({ createdAt: 1 })
       .lean();
 
